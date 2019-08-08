@@ -51,6 +51,7 @@ public class SqlServerSnapshotChangeEventSource extends HistorizedRelationalSnap
     protected SnapshottingTask getSnapshottingTask(OffsetContext previousOffset) {
         boolean snapshotSchema = true;
         boolean snapshotData = true;
+        boolean skipSnapsotLock = false;
 
         // found a previous offset and the earlier snapshot has completed
         if (previousOffset != null && !previousOffset.isSnapshotRunning()) {
@@ -67,6 +68,7 @@ public class SqlServerSnapshotChangeEventSource extends HistorizedRelationalSnap
                 LOGGER.info("According to the connector configuration only schema will be snapshotted");
             }
             snapshotData = connectorConfig.getSnapshotMode().includeData();
+            skipSnapsotLock = connectorConfig.skipSnapshotLock();
         }
 
         return new SnapshottingTask(snapshotSchema, snapshotData);

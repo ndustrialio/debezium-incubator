@@ -125,7 +125,11 @@ public abstract class HistorizedRelationalSnapshotChangeEventSource implements S
             LOGGER.info("Snapshot step 3 - Locking captured tables");
 
             if (snapshottingTask.snapshotSchema()) {
-                lockTablesForSchemaSnapshot(context, ctx);
+                if (snapshottingTask.skipSnapshotLocking()) {
+                    LOGGER.info("Schema locking was disabled in connector configuration as snapshot.schema.lock is set to false");
+                } else {
+                    lockTablesForSchemaSnapshot(context, ctx);
+                }
             }
 
             LOGGER.info("Snapshot step 4 - Determining snapshot offset");
@@ -140,7 +144,9 @@ public abstract class HistorizedRelationalSnapshotChangeEventSource implements S
                 createSchemaChangeEventsForTables(context, ctx);
 
                 // if we've been interrupted before, the TX rollback will cause any locks to be released
-                releaseSchemaSnapshotLocks(ctx);
+                if (!snapshottingTask.skipSnapshotLocking()) {
+                    releaseSchemaSnapshotLocks(ctx);
+                }
             }
             else {
                 LOGGER.info("Snapshot step 6 - Skipping persisting of schema history");
@@ -492,10 +498,12 @@ public abstract class HistorizedRelationalSnapshotChangeEventSource implements S
 
         private final boolean snapshotSchema;
         private final boolean snapshotData;
+        private final boolean skipSnapshotLocking;
 
-        public SnapshottingTask(boolean snapshotSchema, boolean snapshotData) {
+        public SnapshottingTask(boolean snapshotSchema, boolean snapshotData, boolean skipSnapshotLocking) {
             this.snapshotSchema = snapshotSchema;
             this.snapshotData = snapshotData;
+            this.skipSnapshotLocking = skipSnapshotLocking;
         }
 
         /**
@@ -512,9 +520,16 @@ public abstract class HistorizedRelationalSnapshotChangeEventSource implements S
             return snapshotSchema;
         }
 
+        /**
+         * @return true if locking to be skip before building the snapshot schema
+         */
+        public boolean skipSnapshotLocking() {
+            return skipSnapshotLocking;
+        }
+
         @Override
         public String toString() {
-            return "SnapshottingTask [snapshotSchema=" + snapshotSchema + ", snapshotData=" + snapshotData + "]";
+            return "SnapshottingTask [snapshotSchema=" + snapshotSchema + ", snapshotData=" + snapshotData + ", skipSnapshotLocking=" + skipSnapshotLocking + "]";
         }
     }
 
