@@ -419,7 +419,17 @@ public abstract class HistorizedRelationalSnapshotChangeEventSource implements S
             overriddenSelect = connectorConfig.getSnapshotSelectOverridesByTable().get(new TableId(null, tableId.schema(), tableId.table()));
         }
 
-        return overriddenSelect != null ? overriddenSelect : getSnapshotSelect(snapshotContext, tableId);
+        return overriddenSelect != null ? enhanceOverriddenSelect(snapshotContext, overriddenSelect) : getSnapshotSelect(snapshotContext, tableId);
+    }
+
+    /**
+     * This method is overridden for Oracle to implement "as of SCN" predicate
+     * @param snapshotContext snapshot context, used for getting offset SCN
+     * @param overriddenSelect conditional snapshot select
+     * @return enhanced select statement. By default it just returns original select statements.
+     */
+    protected String enhanceOverriddenSelect(SnapshotContext snapshotContext, String overriddenSelect){
+        return overriddenSelect;
     }
 
     /**
