@@ -71,7 +71,7 @@ public class SqlServerSnapshotChangeEventSource extends HistorizedRelationalSnap
             skipSnapsotLock = connectorConfig.skipSnapshotLock();
         }
 
-        return new SnapshottingTask(snapshotSchema, snapshotData);
+        return new SnapshottingTask(snapshotSchema, snapshotData, skipSnapsotLock);
     }
 
     @Override
