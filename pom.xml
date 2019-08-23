@@ -136,27 +136,16 @@
     </modules>
 
     <distributionManagement>
-        <repository>
-            <id>navis-nexus</id>
-            <url>http://nexus.navis.lan/repository/maven-all/</url>
-        </repository>
+<!--      <repository>
+        <id>ossrh</id>
+        <name>Sonatype Staging Repository</name>
+        <url>https://oss.sonatype.org/service/local/staging/deploy/maven2</url>
+      </repository>-->
         <snapshotRepository>
-            <id>navis-nexus-snapshot</id>
-            <name>Navis nexus snapshot</name>
-            <url>http://jenkins:jenkins@nexus.navis.lan/repository/maven-navis-snapshot/
-            </url>
+            <id>navis-snapshot</id>
+            <name>Navis Nexus Repository</name>
+            <url>http://nexus.navis.lan/repository/maven-navis-snapshot/</url>
         </snapshotRepository>
-
-        <!-- <repository>
-          <id>ossrh</id>
-          <name>Sonatype Staging Repository</name>
-          <url>https://oss.sonatype.org/service/local/staging/deploy/maven2</url>
-        </repository>
-        <snapshotRepository>
-          <id>ossrh</id>
-          <name>OSS Sonatype Nexus Snapshots</name>
-          <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-        </snapshotRepository> -->
     </distributionManagement>
 
     <repositories>
@@ -543,9 +532,9 @@
                 <artifactId>nexus-staging-maven-plugin</artifactId>
                 <extensions>true</extensions>
                 <configuration>
-                    <serverId>ossrh</serverId>
-                    <nexusUrl>https://oss.sonatype.org/</nexusUrl>
-                    <autoReleaseAfterClose>false</autoReleaseAfterClose>
+                    <serverId>navis-snapshot</serverId>
+                    <nexusUrl>http://nexus.navis.lan/repository/maven-navis-snapshot/</nexusUrl>
+                    <skipStaging>true</skipStaging>
                 </configuration>
             </plugin>
             <plugin>

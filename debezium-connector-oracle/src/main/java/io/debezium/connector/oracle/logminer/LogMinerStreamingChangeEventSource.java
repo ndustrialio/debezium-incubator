@@ -147,14 +147,9 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     LOGGER.debug("\n\n*****SWITCH occurred*****\n\n");
                     if (!isContinuousMining) {
                         if (strategy == OracleConnectorConfig.LogMiningStrategy.CATALOG_IN_REDO) {
-                            LogMinerHelper.endMining(connection);
-
                             // Oracle does the switch on building data dictionary in redo logs
+                            LogMinerHelper.endMining(connection);
                             LogMinerHelper.buildDataDictionary(connection);
-//                        LogMinerHelper.addOnlineRedoLogFilesForMining(connection);
-                        } else {
-//                        LogMinerHelper.removeLogFileFromMining(currentRedoLogFile, connection);
-//                        LogMinerHelper.addRedoLogFileForMining(connection, possibleNewCurrentLogFile);
                         }
                         filesToMine = LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn, filesToMine);
                     }
@@ -229,6 +224,8 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     private void processResult(ResultSet res, ChangeEventSourceContext context, LogMinerMetrics metrics) throws SQLException {
         int counter = 0;
         Duration cumulativeCommitTime = Duration.ZERO;
+        Duration cumulativeParseTime = Duration.ZERO;
+        Duration cumulativeOtherTime = Duration.ZERO;
         Instant startTime = Instant.now();
         while (res.next()) {
 
@@ -282,7 +279,10 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                 LOGGER.trace("DML,  {}, sql {}", logMessage, redo_sql);
                 counter++;
                 try {
+                    iterationStart = Instant.now();
                     dmlParser.parse(redo_sql, schema.getTables());
+                    cumulativeParseTime = cumulativeParseTime.plus(Duration.between(iterationStart, Instant.now()));
+                    iterationStart = Instant.now();
 
                     LogMinerRowLcr rowLcr = dmlParser.getDmlChange();
                     if (rowLcr == null) {
@@ -311,6 +311,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                                 new LogMinerChangeRecordEmitter(offsetContext, rowLcr, table, clock)
                         );
                     });
+                    cumulativeOtherTime = cumulativeOtherTime.plus(Duration.between(iterationStart, Instant.now()));
 
                 } catch (Exception e) {
                     LOGGER.error("Following statement: {} cannot be parsed due to the : {}", redo_sql, e.getMessage());
@@ -319,8 +320,10 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
         }
         metrics.setProcessedCapturedBatchDuration(Duration.between(startTime, Instant.now()));
         metrics.setCapturedDmlCount(counter);
-        LOGGER.debug("{} DMLs were processes in {} milliseconds, commit time:{}",
-                counter, (Duration.between(startTime, Instant.now()).toMillis()), cumulativeCommitTime.toMillis());
+        LOGGER.debug("{} DMLs were processes in {} milliseconds, commit time:{}, parse time:{}, other time:{}",
+                counter, (Duration.between(startTime, Instant.now()).toMillis()),
+                cumulativeCommitTime.toMillis(), cumulativeParseTime.toMillis(),
+                cumulativeOtherTime.toMillis());
     }
 
     // todo this is temporary debugging info,  remove.
