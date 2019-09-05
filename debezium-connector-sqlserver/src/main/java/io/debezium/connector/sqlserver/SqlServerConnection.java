@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -79,7 +80,18 @@ public class SqlServerConnection extends JdbcConnection {
      *            {@link Configuration} instance, may not be null.
      */
     public SqlServerConnection(Configuration config) {
-        super(config, FACTORY);
+        this(config, null);
+    }
+
+    /**
+     * Creates a new connection using the supplied configuration.
+     *
+     * @param config
+     *            {@link Configuration} instance, may not be null.
+     * @param classLoaderSupplier get client's classloader
+     */
+    public SqlServerConnection(Configuration config, Supplier<ClassLoader> classLoaderSupplier) {
+        super(config, FACTORY, classLoaderSupplier);
         lsnToInstantCache = new BoundedConcurrentHashMap<>(100);
         realDatabaseName = retrieveRealDatabaseName();
     }

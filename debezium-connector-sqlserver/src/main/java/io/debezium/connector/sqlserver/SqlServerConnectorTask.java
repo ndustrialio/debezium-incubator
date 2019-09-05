@@ -84,8 +84,11 @@ public class SqlServerConnectorTask extends BaseSourceTask {
 
         final Configuration jdbcConfig = config.filter(x -> !(x.startsWith(DatabaseHistory.CONFIGURATION_FIELD_PREFIX_STRING) || x.equals(HistorizedRelationalDatabaseConnectorConfig.DATABASE_HISTORY.name())))
                 .subset("database.", true);
-        dataConnection = new SqlServerConnection(jdbcConfig);
-        metadataConnection = new SqlServerConnection(jdbcConfig);
+        Configuration dataConfig = jdbcConfig.edit()
+                .with("database.connection.autocommit", false)
+                .build();
+        dataConnection = new SqlServerConnection(dataConfig, ()->getClass().getClassLoader());
+        metadataConnection = new SqlServerConnection(jdbcConfig, ()->getClass().getClassLoader());
         try {
             dataConnection.setAutoCommit(false);
         }
