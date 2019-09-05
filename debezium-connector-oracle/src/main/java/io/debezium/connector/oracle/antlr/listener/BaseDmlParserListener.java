@@ -14,16 +14,12 @@ import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParserBaseListener;
 import io.debezium.relational.Column;
 import io.debezium.relational.Table;
-import io.debezium.relational.ValueConverter;
 import io.debezium.text.ParsingException;
-import org.apache.kafka.connect.data.Field;
-import org.apache.kafka.connect.data.Schema;
-import org.apache.kafka.connect.data.SchemaBuilder;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getTableName;
+import static io.debezium.connector.oracle.antlr.listener.ParserUtils.getTableName;
 /**
  * This class contains common methods for DML parser listeners
  */
@@ -33,7 +29,7 @@ abstract class BaseDmlParserListener<T> extends PlSqlParserBaseListener {
     protected String schemaName;
     protected Table table;
     final OracleChangeRecordValueConverter converter;
-    protected String alias;
+    String alias;
 
     protected OracleDmlParser parser;
 
@@ -64,58 +60,9 @@ abstract class BaseDmlParserListener<T> extends PlSqlParserBaseListener {
             Column column = table.columns().get(i);
             int type = column.jdbcType();
             T key = getKey(column, i);
-            String name = stripeQuotes(column.name().toUpperCase());
+            String name = ParserUtils.stripeQuotes(column.name().toUpperCase());
             newColumnValues.put(key, new ColumnValueHolder(new LogMinerColumnValueImpl(name, type)));
             oldColumnValues.put(key, new ColumnValueHolder(new LogMinerColumnValueImpl(name, type)));
         }
     }
-
-    /**
-     * This converts the given value to the appropriate object. The conversion is based on the column definition
-     *
-     * @param column column Object
-     * @param value value object
-     * @param converters given converter
-     * @return object as the result of this conversion. It could be null if converter cannot build the schema
-     * or if converter or value are null
-     */
-    Object convertValueToSchemaType(Column column, Object value, OracleChangeRecordValueConverter converters) {
-        if (converters != null && value != null) {
-            final SchemaBuilder schemaBuilder = converters.schemaBuilder(column);
-            if (schemaBuilder == null) {
-                return null;
-            }
-            final Schema schema = schemaBuilder.build();
-            final Field field = new Field(column.name(), 1, schema);
-            final ValueConverter valueConverter = converters.converter(column, field);
-
-            return valueConverter.convert(value);
-        }
-        return null;
-    }
-
-    /**
-     * In some cases values of the parsed expression are enclosed in apostrophes.
-     * Even null values are surrounded by single apostrophes. This method removes them.
-     *
-     * @param text supplied value which might be enclosed by apostrophes.
-     * @return clean String or null in case if test = "null" or = "NULL"
-     */
-    String removeApostrophes(String text){
-        if (text != null && text.indexOf("'") == 0 && text.lastIndexOf("'") == text.length()-1){
-            return text.substring(1, text.length() -1);
-        }
-        if ("null".equalsIgnoreCase(text)){
-            return null;
-        }
-        return text;
-    }
-
-    private String stripeQuotes(String text){
-        if (text != null && text.indexOf("\"") == 0 && text.lastIndexOf("\"") == text.length()-1){
-            return text.substring(1, text.length() -1);
-        }
-        return text;
-    }
-
 }

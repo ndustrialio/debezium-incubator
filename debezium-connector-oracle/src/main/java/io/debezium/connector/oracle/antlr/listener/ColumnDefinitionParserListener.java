@@ -15,7 +15,7 @@ import oracle.jdbc.OracleTypes;
 
 import java.sql.Types;
 
-import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getColumnName;
+import static io.debezium.connector.oracle.antlr.listener.ParserUtils.getColumnName;
 
 /**
  * This class parses column definitions of Oracle statements.

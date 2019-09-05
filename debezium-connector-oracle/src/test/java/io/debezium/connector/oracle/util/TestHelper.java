@@ -31,7 +31,7 @@ public class TestHelper {
                 .withDefault(JdbcConfiguration.HOSTNAME, HOST)
                 .withDefault(JdbcConfiguration.PORT, 1521)
                 .withDefault(JdbcConfiguration.USER, CONNECTOR_USER)
-                //.withDefault(JdbcConfiguration.PASSWORD, "xs")         //Roby
+                //.withDefault(JdbcConfiguration.PASSWORD, "xs")         //Roby todo, revert
                 .withDefault(JdbcConfiguration.PASSWORD, "lm")  //development
                 .withDefault(JdbcConfiguration.DATABASE, "ORA19C")
                 .build();

@@ -10,7 +10,7 @@ import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParserBaseListener;
 import io.debezium.relational.TableId;
 
-import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getTableName;
+import static io.debezium.connector.oracle.antlr.listener.ParserUtils.getTableName;
 
 /**
  * This class is parsing Oracle drop table statements.

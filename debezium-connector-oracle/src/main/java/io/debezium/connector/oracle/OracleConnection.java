@@ -102,7 +102,7 @@ public class OracleConnection extends JdbcConnection {
 
         String query = "select table_name, owner from all_tables where table_name not in " +
                 "(select SDO_INDEX_TABLE from ALL_SDO_INDEX_INFO where SDO_INDEX_OWNER like '%" + schemaNamePattern.toUpperCase() + "%')" +
-                "and owner like '%" + schemaNamePattern.toUpperCase() + "%'";
+                " and owner like '%" + schemaNamePattern.toUpperCase() + "%'";
         if (isView){
             query = "select view_name, owner from all_views where owner like '%" + schemaNamePattern.toUpperCase() + "%'";
         }

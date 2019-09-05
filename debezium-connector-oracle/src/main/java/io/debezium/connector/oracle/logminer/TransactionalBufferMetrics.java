@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * This class contains methods to be MBean exposed
+ * This class contains MBean methods
  */
 @ThreadSafe
 public class TransactionalBufferMetrics extends Metrics implements TransactionalBufferMetricsMXBean {
@@ -24,10 +24,21 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     private AtomicReference<Duration> lagFromTheSource = new AtomicReference<>();
     private AtomicInteger activeTransactions = new AtomicInteger();
     private AtomicLong rolledBackTransactions = new AtomicLong();
+    private AtomicLong committedTransactions = new AtomicLong();
+    private AtomicLong dmlCounter = new AtomicLong();
+    private Instant startTime;
+    private static long MILLIS_PER_SECOND = 1000L;
 
 
     TransactionalBufferMetrics(CdcSourceTaskContext taskContext) {
         super(taskContext, "log-miner-transactional-buffer");
+        startTime = Instant.now();
+        smallestScn.set(-1);
+        lagFromTheSource.set(Duration.ZERO);
+        activeTransactions.set(0);
+        rolledBackTransactions.set(0);
+        committedTransactions.set(0);
+        dmlCounter.set(0);
     }
 
     void setSmallestScn(Long scn){
@@ -50,11 +61,12 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         rolledBackTransactions.incrementAndGet();
     }
 
-    void reset(){
-        smallestScn.set(-1);
-        lagFromTheSource.set(null);
-        activeTransactions.set(0);
-        rolledBackTransactions.set(0);
+    void incrementCommittedTransactions(){
+        committedTransactions.incrementAndGet();
+    }
+
+    void incrementDmlCounter() {
+        dmlCounter.incrementAndGet();
     }
 
     @Override
@@ -73,6 +85,21 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     }
 
     @Override
+    public long getNumberOfCommittedTransactions() {
+        return committedTransactions.get();
+    }
+
+    @Override
+    public long getCommitThroughput() {
+        return committedTransactions.get() * MILLIS_PER_SECOND / Duration.between(startTime, Instant.now()).toMillis();
+    }
+
+    @Override
+    public long getDmlThroughput() {
+        return dmlCounter.get() * MILLIS_PER_SECOND / Duration.between(startTime, Instant.now()).toMillis();
+    }
+
+    @Override
     public long getLagFromSource() {
         Duration lag =  lagFromTheSource.get();
         return lag != null ? lag.toMillis() : -1;
@@ -81,10 +108,12 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     @Override
     public String toString() {
         return "TransactionalBufferMetrics{" +
-                "smallestScn=" + smallestScn +
+                "smallestScn=" + smallestScn.get() +
                 ", lagFromTheSource=" + lagFromTheSource.get() +
-                ", activeTransactions=" + activeTransactions +
-                ", rolledBackTransactions=" + rolledBackTransactions +
+                ", activeTransactions=" + activeTransactions.get() +
+                ", rolledBackTransactions=" + rolledBackTransactions.get() +
+                ", committedTransactions=" + committedTransactions.get() +
+                ", dmlCounter=" + dmlCounter.get() +
                 '}';
     }
 }

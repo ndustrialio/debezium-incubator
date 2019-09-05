@@ -71,13 +71,16 @@ public final class TransactionalBuffer {
      * Registers callback to execute when transaction commits.
      *
      * @param transactionId transaction identifier
-     * @param scn SCN //todo parameter
+     * @param scn SCN
+     * @param changeTime time of DML parsing completion
      * @param callback callback to execute when transaction commits
      */
     void registerCommitCallback(String transactionId, BigDecimal scn, Instant changeTime, CommitCallback callback) {
+        metrics.ifPresent(TransactionalBufferMetrics::incrementDmlCounter);
+        metrics.ifPresent(m -> m.setLagFromTheSource(changeTime));
+
         transactions.computeIfAbsent(transactionId, s -> new Transaction(scn)).commitCallbacks.add(callback);
         metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
-        metrics.ifPresent(m -> m.setLagFromTheSource(changeTime));
     }
 
     /**
@@ -92,7 +95,6 @@ public final class TransactionalBuffer {
         if (transaction == null) {
             return;
         }
-        LOGGER.trace("Transaction {} committed", transactionId);
         List<CommitCallback> commitCallbacks = transaction.commitCallbacks;
         BigDecimal smallestScn = transactions.isEmpty() ? null : calculateSmallestScn();
         taskCounter.incrementAndGet();
@@ -103,6 +105,7 @@ public final class TransactionalBuffer {
                         return;
                     }
                     callback.execute(timestamp, smallestScn);
+                    metrics.ifPresent(TransactionalBufferMetrics::incrementCommittedTransactions);
                 }
             }
             catch (InterruptedException e) {
@@ -161,7 +164,6 @@ public final class TransactionalBuffer {
      */
     void close() {
         transactions.clear();
-        metrics.ifPresent(TransactionalBufferMetrics::reset);
         executor.shutdown();
         try {
             if (!executor.awaitTermination(1000L, TimeUnit.MILLISECONDS)) {
