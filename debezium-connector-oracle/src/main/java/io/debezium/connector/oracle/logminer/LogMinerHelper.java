@@ -5,6 +5,7 @@
  */
 package io.debezium.connector.oracle.logminer;
 
+import io.debezium.connector.oracle.OracleConnection;
 import io.debezium.connector.oracle.OracleConnectorConfig;
 import io.debezium.jdbc.JdbcConnection;
 import io.debezium.relational.TableId;
@@ -17,14 +18,11 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.Collections;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 /**
@@ -40,7 +38,7 @@ public class LogMinerHelper {
      * @param connection connection to the database as log miner user (connection to the container)
      * @throws SQLException fatal exception, cannot continue further
      */
-    public static void buildDataDictionary(Connection connection) throws SQLException {
+    static void buildDataDictionary(Connection connection) throws SQLException {
         executeCallableStatement(connection, SqlUtils.BUILD_DICTIONARY);
     }
 
@@ -66,7 +64,7 @@ public class LogMinerHelper {
     }
 
     /**
-     * This method returns current SCN from the database and updates MBean metrics
+     * This method returns next SCN for mining  and also updates MBean metrics
      *
      * @param connection container level database connection
      * @param metrics MBean accessible metrics
@@ -74,7 +72,7 @@ public class LogMinerHelper {
      * @return next SCN to mine to
      * @throws SQLException fatal exception, cannot continue further
      */
-    public static long getNextScn(Connection connection, long lastProcessesScn, LogMinerMetrics metrics) throws SQLException {
+    static long getNextScn(Connection connection, long lastProcessesScn, LogMinerMetrics metrics) throws SQLException {
         long currentScn = getCurrentScn(connection);
         metrics.setCurrentScn(currentScn);
         int miningDiapason = metrics.getMaxMiningBatchSize();
@@ -82,34 +80,12 @@ public class LogMinerHelper {
     }
 
     /**
-     * This adds all online redo log files for mining.
-     *
-     * @param connection container level database connection
-     * @throws SQLException fatal exception, cannot continue further
+     * This is to update MBean metrics
+     * @param connection connection
+     * @param metrics current metrics
+     * @throws SQLException af any
      */
-    public static void addOnlineRedoLogFilesForMining(Connection connection) throws SQLException {
-
-        // add files for mining
-        Map<String, String> logFiles = getLogFileNames(connection);
-        Set<String> fileNames = logFiles.keySet();
-        if (fileNames.size() < 3) {
-            LOGGER.warn("Number of redo log files {} is insufficient for efficient Log Mining", fileNames.size());
-        }
-
-        for (String fileName : fileNames) {
-            String addLogFileStatement = SqlUtils.getAddLogFileStatement("DBMS_LOGMNR.ADDFILE", fileName); // todo simplify
-            LOGGER.debug("log file = {}", fileName);
-            executeCallableStatement(connection, addLogFileStatement);
-        }
-    }
-
-    /**
-     * todo
-     * @param connection
-     * @param metrics
-     * @throws SQLException
-     */
-    public static void updateLogMinerMetrics(Connection connection, LogMinerMetrics metrics) throws SQLException {
+    static void updateLogMinerMetrics(Connection connection, LogMinerMetrics metrics) throws SQLException {
         // update metrics
         Map<String, String> logStatuses = getRedoLogStatus(connection);
         metrics.setRedoLogState(logStatuses);
@@ -137,7 +113,7 @@ public class LogMinerHelper {
      * PARAM todo
      * @throws SQLException fatal exception, cannot continue further
      */
-    public static void startOnlineMining(Connection connection, Long startScn, Long endScn,
+    static void startOnlineMining(Connection connection, Long startScn, Long endScn,
                                          OracleConnectorConfig.LogMiningStrategy strategy, boolean isContinuousMining) throws SQLException {
         String statement = SqlUtils.getStartLogMinerStatement(startScn, endScn, strategy, isContinuousMining);
         executeCallableStatement(connection, statement);
@@ -152,9 +128,8 @@ public class LogMinerHelper {
      * @return full redo log file name, including path
      * @throws SQLException this would be something fatal
      */
-    public static String getCurrentRedoLogFile(Connection connection, LogMinerMetrics metrics) throws SQLException {
-        String checkQuery = "select f.member " +
-                "from v$log log, v$logfile f  where log.group#=f.group# and log.status='CURRENT'";
+    static String getCurrentRedoLogFile(Connection connection, LogMinerMetrics metrics) throws SQLException {
+        String checkQuery = SqlUtils.CURRENT_REDO_LOG_NAME;
 
         String fileName = "";
         PreparedStatement st = connection.prepareStatement(checkQuery);
@@ -177,7 +152,7 @@ public class LogMinerHelper {
      * @return oldest SCN from online redo log
      * @throws SQLException fatal exception, cannot continue further
      */
-    public static long getFirstOnlineLogScn(Connection connection) throws SQLException {
+    static long getFirstOnlineLogScn(Connection connection) throws SQLException {
         LOGGER.debug("getting first scn of online log");
         Statement s = connection.createStatement();
         ResultSet res = s.executeQuery(SqlUtils.OLDEST_FIRST_CHANGE);
@@ -188,73 +163,53 @@ public class LogMinerHelper {
     }
 
     /**
-     * This method is fetching changes from a batch of archived log files
+     * Sets NLS parameters for mining session.
      *
-     * @param conn                 container level database connection
-     * @param batchSize            number of archived files to mine at once
-     * @param schemaName           user that made schema changes
-     * @param archivedFileIterator Iterator for archived files
-     * @return ResultSet result
-     * @throws SQLException fatal exception, cannot continue further
+     * @param connection session level database connection
+     * @throws SQLException if anything unexpected happens
      */
-    public static ResultSet getArchivedChanges(Connection conn, int batchSize, String schemaName, Iterator<Map.Entry<String, Long>> archivedFileIterator) throws SQLException {
-
-        while (batchSize > 0 && archivedFileIterator.hasNext()) {
-            String name = archivedFileIterator.next().getKey();
-            addRedoLogFileForMining(conn, name);
-            LOGGER.debug("{} was added for mining", archivedFileIterator);
-            batchSize--;
-        }
-
-        buildArchivedMiningView(conn);
-
-        // mining
-        PreparedStatement getChangesQuery = conn.prepareStatement(SqlUtils.queryLogMinerArchivedContents(schemaName));
-        ResultSet result = getChangesQuery.executeQuery();
-        getChangesQuery.close();
-        return result;
+    static void setNlsSessionParameters(JdbcConnection connection) throws SQLException {
+        connection.executeWithoutCommitting(SqlUtils.NLS_SESSION_PARAMETERS);
     }
 
     /**
-     * This method fetches all archived log files names, starting from the one which contains offset SCN.
-     * This is needed what the connector is down for a long time and some changes were archived.
-     * This will help to catch up old changes during downtime.
-     *
-     * @param offsetScn  offset SCN
-     * @param connection container level database connection
-     * @return java.util.Map as List of archived log filenames and it's next_change# field value
-     * @throws SQLException fatal exception, cannot continue further
+     * This fetches online redo log statuses
+     * @param connection privileged connection
+     * @return REDO LOG statuses Map, where key is the REDO name and value is the status
+     * @throws SQLException if anything unexpected happens
      */
-    public static Map<String, Long> getArchivedLogFiles(long offsetScn, Connection connection) throws SQLException {
-        // this happens for the first connection start. No offset yet, we should capture current changes only.
-        if (offsetScn == -1) {
-            return Collections.emptyMap();
-        }
+    private static Map<String, String> getRedoLogStatus(Connection connection) throws SQLException {
+        return getMap(connection, SqlUtils.REDO_LOGS_STATUS, "unknown");
+    }
 
-        long oldestArchivedScn = getFirstArchivedLogScn(connection);
-        if (offsetScn < oldestArchivedScn) {
-            throw new SQLException("There are no log files containing this SCN. " +
-                    "Most likely the connector was down for a long time and archived log files were purged");
-        }
+    /**
+     * This fetches online redo log file statuses
+     * @param connection privileged connection
+     * @return REDO LOG FILE statuses Map, where key is the file name and value is the status
+     * @throws SQLException if anything unexpected happens
+     */
+    private static Map<String, String> getRedoLogFileStatus(Connection connection) throws SQLException {
+        return getMap(connection, SqlUtils.REDO_LOG_FILES_STATUS, "file in use");
+    }
 
-        Map<String, Long> allLogs = new TreeMap<>();
+    /**
+     * This fetches REDO LOG switch history for the last day
+     * @param connection privileged connection
+     * @return Map of switching history info, where KEY is file name the switch happened from and value - time of the day
+     * @throws SQLException if anything unexpected happens
+     */
+    private static Map<String, String> getSwitchHistory(Connection connection) throws SQLException {
+        return getMap(connection, SqlUtils.SWITCH_HISTORY, "unknown");
+    }
 
-        PreparedStatement ps = connection.prepareStatement(SqlUtils.LATEST_SCN_FROM_ARCHIVED_LOG);
-        ResultSet res = ps.executeQuery();
-        res.next();
-        long maxArchivedScn = res.getLong(1);
-
-        ps = connection.prepareStatement(SqlUtils.ALL_ARCHIVED_LOGS_NAMES_FOR_OFFSET);
-        ps.setLong(1, offsetScn);
-        ps.setLong(2, maxArchivedScn);
-        res = ps.executeQuery();
-        while (res.next()) {
-            allLogs.put(res.getString(1), res.getLong(2));
-            LOGGER.info("Log file to mine: {}, next change = {} ", res.getString(1), res.getLong(2));
-        }
-        ps.close();
-        res.close();
-        return allLogs;
+    /**
+     * This fetches online redo log file sequences
+     * @param connection privileged connection
+     * @return REDO LOG FILE statuses Map, where key is the file name and value is the sequence
+     * @throws SQLException if anything unexpected happens
+     */
+    private static Map<String, String> getRedoLogSequence(Connection connection) throws SQLException {
+        return getMap(connection, SqlUtils.REDO_LOGS_SEQUENCE, "unknown");
     }
 
     /**
@@ -265,7 +220,7 @@ public class LogMinerHelper {
      * @param connection  container level database connection
      * @throws SQLException fatal exception, cannot continue further
      */
-    public static void removeLogFileFromMining(String logFileName, Connection connection) throws SQLException {
+    private static void removeLogFileFromMining(String logFileName, Connection connection) throws SQLException {
         String removeLogFileFromMining = SqlUtils.getRemoveLogFileFromMiningStatement(logFileName);
         executeCallableStatement(connection, removeLogFileFromMining);
         LOGGER.debug("{} was removed from mining", removeLogFileFromMining);
@@ -273,110 +228,50 @@ public class LogMinerHelper {
     }
 
     /**
-     * Sets NLS parameters for mining session.
-     *
-     * @param connection session level database connection
-     * @throws SQLException if anything unexpected happens
+     * This method checks if supplemental logging was set on the database level. If so it just logs this info.
+     * If database level supplemental logging was not set, the method checks if each table has it and set it.
+     * @param jdbcConnection oracle connection on logminer level
+     * @param connection conn
+     * @param pdbName pdb name
+     * @param tableIds whitelisted tables
+     * @throws SQLException any
      */
-    public static void setNlsSessionParameters(JdbcConnection connection) throws SQLException {
-        connection.executeWithoutCommitting(SqlUtils.NLS_SESSION_PARAMETERS);
-    }
-
-    /**
-     * This finds redo log, containing given SCN
-     * @param connection privileged connection
-     * @param scn the SCN
-     * @return fine name
-     * @throws SQLException if anything unexpected happens
-     */
-    public static String getRedoLogForScn(Connection connection, Long scn) throws SQLException {
-        String fileName = "no online REDO file contains SCN: " + scn;
-        if (scn != null && scn > 0) {
-            String query = SqlUtils.getRedoLogNameForScnQuery(scn);
-            PreparedStatement statement = connection.prepareStatement(query);
-            ResultSet rs = statement.executeQuery();
-            while (rs.next()) {
-                fileName = rs.getString(1);
-            }
-            rs.close();
+    static void setSupplementalLoggingForWhitelistedTables(OracleConnection jdbcConnection, Connection connection, String pdbName,
+                                                                  Set<TableId> tableIds) throws SQLException {
+        if (pdbName != null) {
+            jdbcConnection.setSessionToPdb(pdbName);
         }
-        return fileName;
-    }
 
-    /**
-     * This fetches online redo log statuses
-     * @param connection privileged connection
-     * @return REDO LOG statuses Map, where key is the REDO name and value is the status
-     * @throws SQLException if anything unexpected happens
-     */
-    public static Map<String, String> getRedoLogStatus(Connection connection) throws SQLException {
-        return getMap(connection, SqlUtils.REDO_LOGS_STATUS, "unknown");
-    }
-
-    /**
-     * This fetches online redo log file statuses
-     * @param connection privileged connection
-     * @return REDO LOG FILE statuses Map, where key is the file name and value is the status
-     * @throws SQLException if anything unexpected happens
-     */
-    public static Map<String, String> getRedoLogFileStatus(Connection connection) throws SQLException {
-        return getMap(connection, SqlUtils.REDO_LOG_FILES_STATUS, "file in use");
-    }
-
-    /**
-     * This fetches REDO LOG switch history for the last day
-     * @param connection privileged connection
-     * @return Map of switching history info, where KEY is file name the switch happened from and value - time of the day
-     * @throws SQLException if anything unexpected happens
-     */
-    public static Map<String, String> getSwitchHistory(Connection connection) throws SQLException {
-        return getMap(connection, SqlUtils.SWITCH_HISTORY, "unknown");
-    }
-
-    /**
-     * This fetches REDO LOG file names and group number. It picks up only one member per group to avoid duplications.
-     * @param connection privileged connection
-     * @return Map of lgo file names , where KEY is file name and value - number of the group
-     * @throws SQLException if anything unexpected happens
-     */
-    public static Map<String, String> getLogFileNames(Connection connection) throws SQLException {
-        return getMap(connection, SqlUtils.ONLINE_LOG_FILENAME, "unknown");
-    }
-
-    /**
-     * This fetches online redo log file sequences
-     * @param connection privileged connection
-     * @return REDO LOG FILE statuses Map, where key is the file name and value is the sequence
-     * @throws SQLException if anything unexpected happens
-     */
-    public static Map<String, String> getRedoLogSequence(Connection connection) throws SQLException {
-        return getMap(connection, SqlUtils.REDO_LOGS_SEQUENCE, "unknown");
-    }
-
-    /**
-     * todo
-     * @param tables
-     */
-    public static void setSupplementalLogging(Connection connection, Set<TableId> tables) throws SQLException{
-        final String supplementalLogDataAll = "SUPPLEMENTAL_LOG_DATA_ALL";
-        String validateLogging = "select 'SUPPLEMENTAL_LOG_DATA_ALL', " + supplementalLogDataAll + " from V$DATABASE";
-        Map<String, String> logging = getMap(connection, validateLogging, "unknown");
-        if ("NO".equalsIgnoreCase(logging.get(supplementalLogDataAll))) {
-            tables.forEach(table -> {
+        final String globalLevelLogging = "SUPPLEMENTAL_LOG_DATA_ALL";
+        String validateGlobalLogging = "SELECT '" + globalLevelLogging + "', " + globalLevelLogging + " from V$DATABASE";
+        String tableLevelLogging = "ALL_COLUMN_LOGGING";
+        String validateTableLevelLogging = "SELECT '" + tableLevelLogging + "', LOG_GROUP_TYPE FROM DBA_LOG_GROUPS WHERE TABLE_NAME = '";
+        Map<String, String> globalLogging = getMap(connection, validateGlobalLogging, "unknown");
+        if ("no".equalsIgnoreCase(globalLogging.get(globalLevelLogging))) {
+            tableIds.forEach(table -> {
                 String tableName = table.schema() + "." + table.table();
                 try {
-                    String alterTableStatement = "ALTER TABLE " + tableName + " ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS";
-                    executeCallableStatement(connection, alterTableStatement);
+                    Map<String, String> tableLogging = getMap(connection, validateTableLevelLogging + tableName.toUpperCase() + "'", "unknown");
+                    if (tableLogging.get(tableLevelLogging) != null) {
+                        String alterTableStatement = "ALTER TABLE " + tableName + " ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS";
+                        executeCallableStatement(connection, alterTableStatement);
+                    }
                     LOGGER.info("altering table {} for supplemental logging", table.table());
                 } catch (SQLException e) {
-                    LOGGER.warn("cannot do it twice for table {}", tableName);
-                    //throw new RuntimeException("Cannot set supplemental logging for table " + tableName, e);
+                    throw new RuntimeException("Cannot set supplemental logging for table " + tableName, e);
                 }
             });
         } else {
-            LOGGER.warn("Supplemental logging is set on global level, individual table supplemental logging was skipped");
+            LOGGER.warn("Supplemental logging is set on global level, setting individual table supplemental logging was skipped");
+        }
+
+
+        if (pdbName != null) {
+            jdbcConnection.resetSessionToCdb();
         }
     }
+
+
 
     /**
      * This call completes log miner session.
@@ -398,46 +293,24 @@ public class LogMinerHelper {
     }
 
     /**
-     * This method fetches the oldest SCN from online redo log files
-     *
-     * @param connection container level database connection
-     * @return oldest SCN from online redo log
-     * @throws SQLException fatal exception, cannot continue further
+     * This method implements CONTINUOUS_MINE functionality
+     * @param connection connection
+     * @param offsetScn current offset
+     * @param currentLogFilesForMining list of files we are currently mining
+     * @return new list for mining sessions
+     * @throws SQLException eny problem
      */
-    private static long getFirstArchivedLogScn(Connection connection) throws SQLException {
-        LOGGER.debug("getting first scn of archived log");
-        Statement s = connection.createStatement();
-        ResultSet res = s.executeQuery(SqlUtils.OLDEST_ARCHIVED_CHANGE);
-        res.next();
-        long firstScnOfOnlineLog = res.getLong(1);
-        s.close();
-        res.close();
-        return firstScnOfOnlineLog;
-    }
-
-    /**
-     * A method to add log file for mining
-     *
-     * @param connection Database connection
-     * @param fileName   Redo log file name
-     * @throws SQLException fatal exception
-     */
-    public static void addRedoLogFileForMining(Connection connection, String fileName) throws SQLException {
-        final String addLogFileStatement = SqlUtils.getAddLogFileStatement("DBMS_LOGMNR.ADDFILE", fileName);
-        executeCallableStatement(connection, addLogFileStatement);
-        LOGGER.debug("Redo log file= {} added for mining", fileName);
-    }
-
-    // todo
-    public static List<String> setRedoLogFilesForMining(Connection connection, Long offsetScn, List<String> currentLogFilesForMining) throws SQLException {
+    static List<String> setRedoLogFilesForMining(Connection connection, Long offsetScn, List<String> currentLogFilesForMining) throws SQLException {
         String query = SqlUtils.ALL_ONLINE_LOGS_NAMES_FOR_OFFSET; // todo filter in the query
         Map<String, String> logFiles = getMap(connection, query, "-1");
-        // todo -1000
-        List<String> logFilesForMining = logFiles.entrySet().stream().filter(entry -> Double.parseDouble(entry.getValue()) > offsetScn-1000).map(Map.Entry::getKey).collect(Collectors.toList());
+        List<String> logFilesForMining = logFiles.entrySet().stream().
+                filter(entry -> Double.parseDouble(entry.getValue()) > offsetScn).
+                map(Map.Entry::getKey).collect(Collectors.toList());
         LOGGER.debug("current list : {}, new list to mine: {}", currentLogFilesForMining, logFilesForMining);
         List<String> outdatedFiles = currentLogFilesForMining.stream().filter(file -> !logFilesForMining.contains(file)).collect(Collectors.toList());
         for (String file : outdatedFiles) {
             removeLogFileFromMining(file, connection);
+            LOGGER.debug("deleted outdated file {}", file);
         }
         List<String> filesToAddForMining = logFilesForMining.stream().filter(file -> !currentLogFilesForMining.contains(file)).collect(Collectors.toList());
         for (String file : filesToAddForMining) {
@@ -447,19 +320,6 @@ public class LogMinerHelper {
         }
 
         return logFilesForMining;
-    }
-
-    /**
-     * This method builds mining view to query changes from.
-     * This view is built for archived log files.
-     * It uses data dictionary from online catalog. However DDL will be available.
-     *
-     * @param connection container level database connection
-     * @throws SQLException fatal exception, cannot continue further
-     */
-    private static void buildArchivedMiningView(Connection connection) throws SQLException {
-        executeCallableStatement(connection, SqlUtils.START_LOGMINER_FOR_ARCHIVE_STATEMENT);
-        // todo If the archive is bad, logMiner will not be able to access it, maybe we should continue gracefully:
     }
 
     private static void executeCallableStatement(Connection connection, String statement) throws SQLException {

@@ -82,7 +82,7 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
         this.connection = connection;
     }
 
-    // todo some methods are just a clones from OracleVAlueConverters, remove or implement differently
+    // todo some methods are just a clones from OracleValueConverters, remove or implement differently
 
     @Override
     public SchemaBuilder schemaBuilder(Column column) {
@@ -90,7 +90,7 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
             logger.warn("Column is null, investigate");
             return null;
         }
-        logger.debug("Building schema for column {} of type {} named {} with constraints ({},{})",
+        logger.trace("Building schema for column {} of type {} named {} with constraints ({},{})",
                 column.name(),
                 column.jdbcType(),
                 column.typeName(),

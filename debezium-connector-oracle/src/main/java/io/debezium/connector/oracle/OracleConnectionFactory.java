@@ -23,7 +23,6 @@ public class OracleConnectionFactory implements ConnectionFactory {
         int port = config.getPort();
         String database = config.getDatabase();
 
-        OracleConnectorConfig oracleConnectorConfig = new OracleConnectorConfig(config);
         String adapterString = config.getString("connection.adapter");
         adapterString =  adapterString == null ?  config.getString(OracleConnectorConfig.CONNECTOR_ADAPTER) : adapterString;
         OracleConnectorConfig.ConnectorAdapter adapter = OracleConnectorConfig.ConnectorAdapter.parse(adapterString);

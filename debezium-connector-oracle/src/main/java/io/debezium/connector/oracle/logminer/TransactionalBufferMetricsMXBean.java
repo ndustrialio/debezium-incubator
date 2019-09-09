@@ -18,6 +18,27 @@ public interface TransactionalBufferMetricsMXBean {
     long getNumberOfRolledBackTransactions();
 
     /**
+     * Exposes number of committed transactions
+     *
+     * @return number of committed transaction in the in-memory buffer
+     */
+    long getNumberOfCommittedTransactions();
+
+    /**
+     * Exposes average number of committed transactions per second
+     *
+     * @return average number of committed transactions per second in the in-memory buffer
+     */
+    long getCommitThroughput();
+
+    /**
+     * Exposes average number of captured and parsed DML per second
+     *
+     * @return average number of captured and parsed DML per second in the in-memory buffer
+     */
+    long getDmlThroughput();
+
+    /**
      * Exposes number of transaction, buffered in memory
      *
      * @return number of currently buffered transactions
@@ -25,7 +46,7 @@ public interface TransactionalBufferMetricsMXBean {
     int getNumberOfActiveTransactions();
 
     /**
-     * Exposes the oldest(smallest) in the in-memory buffer
+     * Exposes the oldest(smallest) in the in-memory buffer SCN
      *
      * @return oldest SCN
      */

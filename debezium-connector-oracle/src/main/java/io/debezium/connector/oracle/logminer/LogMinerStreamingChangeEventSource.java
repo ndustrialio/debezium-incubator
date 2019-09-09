@@ -10,7 +10,7 @@ import io.debezium.connector.oracle.OracleConnectorConfig;
 import io.debezium.connector.oracle.OracleDatabaseSchema;
 import io.debezium.connector.oracle.OracleOffsetContext;
 import io.debezium.connector.oracle.OracleTaskContext;
-import io.debezium.connector.oracle.antlr.OracleDmlParser;
+import io.debezium.connector.oracle.jsqlparser.SimpleDmlParser;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
 import io.debezium.pipeline.ErrorHandler;
 import io.debezium.pipeline.EventDispatcher;
@@ -50,7 +50,9 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     private final boolean tablenameCaseInsensitive;
     private final ErrorHandler errorHandler;
     private final TransactionalBuffer transactionalBuffer;
-    private final OracleDmlParser dmlParser;
+    // todo introduce injection of appropriate parser
+//    private final OracleDmlParser dmlParser;
+    private final SimpleDmlParser dmlParser;
     private final String catalogName;
     //private final int posVersion;
     private OracleConnectorConfig connectorConfig;
@@ -74,8 +76,9 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
 
         this.connectorConfig = connectorConfig;
 
-        this.dmlParser = new OracleDmlParser(true, connectorConfig.getDatabaseName(), connectorConfig.getSchemaName(),
-                converters);
+//        this.dmlParser = new OracleDmlParser(true, connectorConfig.getDatabaseName(), connectorConfig.getSchemaName(),
+//                converters);
+        this.dmlParser = new SimpleDmlParser(connectorConfig.getDatabaseName(), connectorConfig.getSchemaName(), converters);
         this.errorHandler = errorHandler;
         this.catalogName = (connectorConfig.getPdbName() != null) ? connectorConfig.getPdbName() : connectorConfig.getDatabaseName();
         this.transactionalBufferMetrics = new TransactionalBufferMetrics(taskContext);
@@ -88,7 +91,6 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
         this.isContinuousMining = connectorConfig.isContinuousMining();
     }
 
-    // todo continuous_mine option, add redos only between offset and current
     /**
      * This is the loop to get changes from LogMiner
      *
@@ -97,7 +99,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
      */
     @Override
     public void execute(ChangeEventSourceContext context) throws InterruptedException {
-        Metronome metronome = Metronome.sleeper(Duration.ofMillis(1000L), clock);
+        Metronome metronome;
         ResultSet res = null;
 
         try (Connection connection = jdbcConnection.connection();
@@ -106,27 +108,19 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
             long lastProcessedScn = offsetContext.getScn();
             long oldestScnInOnlineRedo = LogMinerHelper.getFirstOnlineLogScn(connection);
             if (lastProcessedScn < oldestScnInOnlineRedo) { // todo why this does not work?
-                throw new RuntimeException("Online REDO LOG files don't contain the offset SCN. Clean offset info and start over");
+                throw new RuntimeException("Online REDO LOG files don't contain the offset SCN. Clean offset and start over");
             }
 
 
             // 1. Configure Log Miner to mine online redo logs
             LogMinerHelper.setNlsSessionParameters(jdbcConnection);
-
-            if (connectorConfig.getPdbName() != null) {
-                jdbcConnection.setSessionToPdb(connectorConfig.getPdbName());
-            }
-            LogMinerHelper.setSupplementalLogging(connection, schema.tableIds());
-
-            if (connectorConfig.getPdbName() != null) {
-                jdbcConnection.resetSessionToCdb();
-            }
+            LogMinerHelper.setSupplementalLoggingForWhitelistedTables(jdbcConnection, connection, connectorConfig.getPdbName(), schema.tableIds());
 
             LOGGER.debug("strategy = {}", strategy.getValue());
             if (strategy == OracleConnectorConfig.LogMiningStrategy.CATALOG_IN_REDO) {
                 LogMinerHelper.buildDataDictionary(connection);
             }
-//            LogMinerHelper.addOnlineRedoLogFilesForMining(connection);
+
             List<String> filesToMine = new ArrayList<>();
             if (!isContinuousMining) {
                  filesToMine = LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn, new ArrayList<>());
@@ -137,9 +131,10 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
             // 2. Querying LogMinerRowLcr(s) from Log miner while running
             while (context.isRunning()) {
                 LOGGER.trace("Receiving a change from LogMiner");
+                metronome = Metronome.sleeper(Duration.ofMillis(logMinerMetrics.getMillisecondsToSleepBetweenMiningQuery()), clock);
 
                 long nextScn = LogMinerHelper.getNextScn(connection, lastProcessedScn, logMinerMetrics);
-                LOGGER.debug("lastProcessedScn: {}, endScn: {}", lastProcessedScn, nextScn);
+                LOGGER.trace("lastProcessedScn: {}, endScn: {}", lastProcessedScn, nextScn);
 
                 String possibleNewCurrentLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
 
@@ -147,13 +142,14 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     LOGGER.debug("\n\n*****SWITCH occurred*****\n\n");
                     if (!isContinuousMining) {
                         if (strategy == OracleConnectorConfig.LogMiningStrategy.CATALOG_IN_REDO) {
-                            // Oracle does the switch on building data dictionary in redo logs
+                            // Oracle does another switch on building data dictionary in redo logs
                             LogMinerHelper.endMining(connection);
                             LogMinerHelper.buildDataDictionary(connection);
+                            filesToMine.clear();
                         }
                         filesToMine = LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn, filesToMine);
                     }
-                    LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
+                    LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics); // todo : it might slow down the iteration
                     currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
                 }
 
@@ -162,15 +158,13 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                 fetchChangesFromMiningView.setLong(1, lastProcessedScn);
                 fetchChangesFromMiningView.setLong(2, nextScn);
 
-                //traceInfo(connection, "before fetching changes");
                 Instant startTime = Instant.now();
                 res = fetchChangesFromMiningView.executeQuery();
                 logMinerMetrics.setLastFetchingQueryDuration(Duration.between(startTime, Instant.now()));
-                traceInfo(connection, "after fetching changes");
 
-                if (res.isBeforeFirst()) {
-                    processResult(res, context, logMinerMetrics);
-                } else {
+                int processedCount = processResult(res, context, logMinerMetrics);
+                if (processedCount < logMinerMetrics.getFetchedRecordsSizeLimitToFallAsleep()) {
+                    LOGGER.debug("sleeping for {} milliseconds", logMinerMetrics.getMillisecondsToSleepBetweenMiningQuery());
                     metronome.pause();
                 }
                 // update SCN in offset context only if buffer is empty
@@ -185,14 +179,12 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
         } finally {
             // 3. disconnect
             if (transactionalBuffer != null) {
-                transactionalBuffer.close();
                 LOGGER.info("Transactional metrics dump: {}", transactionalBufferMetrics.toString());
-                transactionalBufferMetrics.reset();
+                transactionalBuffer.close();
                 transactionalBufferMetrics.unregister(LOGGER);
             }
             if (logMinerMetrics != null){
                 LOGGER.info("LogMiner metrics dump: {}", logMinerMetrics.toString());
-                logMinerMetrics.reset();
                 logMinerMetrics.unregister(LOGGER);
             }
             try (Connection connection = jdbcConnection.connection()) {
@@ -218,10 +210,11 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
 
     @Override
     public void commitOffset(Map<String, ?> offset) {
-        // todo nothing here?
+        // nothing to do
     }
 
-    private void processResult(ResultSet res, ChangeEventSourceContext context, LogMinerMetrics metrics) throws SQLException {
+    // todo move it somewhere
+    private int processResult(ResultSet res, ChangeEventSourceContext context, LogMinerMetrics metrics) throws SQLException {
         int counter = 0;
         Duration cumulativeCommitTime = Duration.ZERO;
         Duration cumulativeParseTime = Duration.ZERO;
@@ -257,7 +250,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
 
             //Rollback
             if (operationCode == RowMapper.ROLLBACK) {
-                LOGGER.trace("ROLLBACK, {}", logMessage);
+                LOGGER.debug("ROLLBACK, {}", logMessage);
                 transactionalBuffer.rollback(txId);
                 continue;
             }
@@ -280,11 +273,12 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                 counter++;
                 try {
                     iterationStart = Instant.now();
-                    dmlParser.parse(redo_sql, schema.getTables());
+                    dmlParser.parse(redo_sql, schema.getTables(), txId);
                     cumulativeParseTime = cumulativeParseTime.plus(Duration.between(iterationStart, Instant.now()));
                     iterationStart = Instant.now();
 
                     LogMinerRowLcr rowLcr = dmlParser.getDmlChange();
+                    LOGGER.trace("parsed record: {}" , rowLcr);
                     if (rowLcr == null) {
                         LOGGER.error("Following statement was not parsed: {}", redo_sql);
                         continue;
@@ -320,26 +314,12 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
         }
         metrics.setProcessedCapturedBatchDuration(Duration.between(startTime, Instant.now()));
         metrics.setCapturedDmlCount(counter);
-        LOGGER.debug("{} DMLs were processes in {} milliseconds, commit time:{}, parse time:{}, other time:{}",
-                counter, (Duration.between(startTime, Instant.now()).toMillis()),
-                cumulativeCommitTime.toMillis(), cumulativeParseTime.toMillis(),
-                cumulativeOtherTime.toMillis());
-    }
-
-    // todo this is temporary debugging info,  remove.
-    private void traceInfo(Connection connection, String info) throws SQLException {
-        String checkQuery = "select min(f.member), log.first_change#, log.sequence# from v$log log, v$logfile f  " +
-                "where log.group#=f.group# and log.status='CURRENT' group by log.first_change#,log.sequence#";
-
-        PreparedStatement st = connection.prepareStatement(checkQuery);
-        ResultSet result = st.executeQuery();
-        while (result.next()) {
-            String fileName = result.getString(1);
-            long changeScn = result.getLong(2);
-            String sequence = result.getString(3);
-            LOGGER.debug(info + "-> filename: {} ,first SCN: {}, sequence: {}", fileName, changeScn , sequence );
+        if (counter > 0) {
+            LOGGER.debug("{} DMLs were processes in {} milliseconds, commit time:{}, parse time:{}, other time:{}",
+                    counter, (Duration.between(startTime, Instant.now()).toMillis()),
+                    cumulativeCommitTime.toMillis(), cumulativeParseTime.toMillis(),
+                    cumulativeOtherTime.toMillis());
         }
-        st.close();
-        result.close();
+        return counter;
     }
 }

@@ -50,11 +50,6 @@ public class UpdateParserListener extends BaseDmlStringParserListener {
         super.enterUpdate_statement(ctx);
     }
 
-    @Override
-    public void enterTable_alias(PlSqlParser.Table_aliasContext ctx) {
-        alias = ctx.getText().toUpperCase();
-    }
-
     /**
      * this method could be invoked by delete, insert or update statements, but we should act on update only
      * @param ctx where clause context
@@ -63,7 +58,7 @@ public class UpdateParserListener extends BaseDmlStringParserListener {
     public void enterWhere_clause(PlSqlParser.Where_clauseContext ctx) {
         if (isUpdate) {
             parseRecursively(ctx.expression().logical_expression());
-            cloneOldToNewColumnValues();
+            ParserUtils.cloneOldToNewColumnValues(newColumnValues, oldColumnValues, table);
         }
         isUpdate = false;
         super.enterWhere_clause(ctx);
@@ -76,17 +71,17 @@ public class UpdateParserListener extends BaseDmlStringParserListener {
                     "Statement: " + getText(ctx));
         }
         String columnName = ctx.column_name().getText().toUpperCase();
-        String stripedName = ParserListenerUtils.stripeAlias(columnName, alias);
-        stripedName = ParserListenerUtils.stripeQuotes(stripedName);
+        String stripedName = ParserUtils.stripeAlias(columnName, alias);
+        stripedName = ParserUtils.stripeQuotes(stripedName);
         String value = ctx.getText().substring(columnName.length() + 1);
         String nullValue = ctx.expression().getStop().getText();
         if ("null".equalsIgnoreCase(nullValue)) {
             value = nullValue;
         }
-       Object stripedValue = removeApostrophes(value);
+       Object stripedValue = ParserUtils.removeApostrophes(value);
 
         Column column = table.columnWithName(stripedName);
-        Object valueObject = convertValueToSchemaType(column, stripedValue, converter);
+        Object valueObject = ParserUtils.convertValueToSchemaType(column, stripedValue, converter);
 
         ColumnValueHolder columnValueHolder = newColumnValues.get(stripedName);
         columnValueHolder.setProcessed(true);
@@ -106,18 +101,4 @@ public class UpdateParserListener extends BaseDmlStringParserListener {
         super.exitUpdate_statement(ctx);
     }
 
-    /**
-     * Initialize new column values with old column values.
-     * It does not override new values which were processed already in where clause parsing
-     */
-    private void cloneOldToNewColumnValues() {
-        for (Column column : table.columns()) {
-            final ColumnValueHolder newColumnValue = newColumnValues.get(column.name());
-            if (!newColumnValue.isProcessed()) {
-                final ColumnValueHolder oldColumnValue = oldColumnValues.get(column.name());
-                newColumnValue.setProcessed(true);
-                newColumnValue.getColumnValue().setColumnData(oldColumnValue.getColumnValue().getColumnData());
-            }
-        }
-    }
 }
