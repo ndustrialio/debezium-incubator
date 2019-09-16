@@ -68,8 +68,8 @@ public class InsertParserListener extends BaseDmlParserListener<Integer> {
             Column column = table.columnWithName(columnName);
 
             String valueText = value.logical_expression().getText();
-            valueText = removeApostrophes(valueText);
-            Object valueObject = convertValueToSchemaType(column, valueText, converter);
+            valueText = ParserUtils.removeApostrophes(valueText);
+            Object valueObject = ParserUtils.convertValueToSchemaType(column, valueText, converter);
 
             columnObject.getColumnValue().setColumnData(valueObject);
         }
@@ -82,7 +82,6 @@ public class InsertParserListener extends BaseDmlParserListener<Integer> {
                 .stream().map(ColumnValueHolder::getColumnValue).collect(Collectors.toList());
         LogMinerRowLcr newRecord = new LogMinerRowLcrImpl(Envelope.Operation.CREATE, actualNewValues, Collections.emptyList());
         parser.setRowLCR(newRecord);
-        //parser.signalChangeEvent();
         super.exitSingle_table_insert(ctx);
     }
 }

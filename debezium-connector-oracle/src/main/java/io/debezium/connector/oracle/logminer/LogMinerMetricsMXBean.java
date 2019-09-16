@@ -43,28 +43,36 @@ public interface LogMinerMetricsMXBean {
     String[] getSwitchHistory();
 
     /**
-     * todo
+     * todo Java doc
      * @return
      */
     String[] getSequences();
 
-    int getLastDaySwitchNumber();
+    int getTodaySwitchCount();
 
     Long getLastFetchingQueryDuration();
 
-    int getNumberOfCapturedDml();
+    int getNumberOfFetchedDml();
 
     int getExecutedFetchingQueriesCount();
 
     Long getAverageFetchingQueryDuration();
 
-    Long getLastProcessedCapturedBatchDuration();
+    Long getDurationOfLastProcessedBatch();
 
-    int getProcessesCapturedBatchesCount();
+    int getProcessedBatchCount();
 
-    Long getAverageProcessedCapturedBatchDuration();
+    Long getAverageProcessedBatchDuration();
 
     int getMaxMiningBatchSize();
 
     void  setMaxMiningBatchSize(int size);
+
+    int getMillisecondsToSleepBetweenMiningQuery();
+
+    void setMillisecondsToSleepBetweenMiningQuery(int milliseconds);
+
+    int getFetchedRecordsSizeLimitToFallAsleep();
+
+    void setFetchedRecordsSizeLimitToFallAsleep(int size);
 }

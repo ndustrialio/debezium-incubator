@@ -19,8 +19,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static io.debezium.antlr.AntlrDdlParser.getText;
-import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getColumnName;
-import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getTableName;
+import static io.debezium.connector.oracle.antlr.listener.ParserUtils.getColumnName;
+import static io.debezium.connector.oracle.antlr.listener.ParserUtils.getTableName;
 
 /**
  * Parser listener that is parsing Oracle ALTER TABLE statements
@@ -105,13 +105,9 @@ public class AlterTableParserListener extends PlSqlParserBaseListener {
     public void exitColumn_definition(PlSqlParser.Column_definitionContext ctx) {
         parser.runIfNotNull(() -> {
             if (columnEditors != null) {
-                // column editor list is not null when a multiple columns are parsed in one statement
                 if (columnEditors.size() > parsingColumnIndex) {
-                    // assign next column editor to parse another column definition
                     columnDefinitionParserListener.setColumnEditor(columnEditors.get(parsingColumnIndex++));
                 } else {
-                    // all columns parsed
-                    // reset global variables for next parsed statement
                     columnEditors.forEach(columnEditor -> tableEditor.addColumn(columnEditor.create()));
                     columnEditors = null;
                     parsingColumnIndex = STARTING_INDEX;

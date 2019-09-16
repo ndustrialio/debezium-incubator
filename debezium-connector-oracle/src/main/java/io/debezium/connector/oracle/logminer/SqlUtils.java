@@ -21,16 +21,9 @@ import java.util.stream.Collectors;
 public class SqlUtils {
 
     static final String BUILD_DICTIONARY = "BEGIN DBMS_LOGMNR_D.BUILD (options => DBMS_LOGMNR_D.STORE_IN_REDO_LOGS); END;";
-    static final String ONLINE_LOG_FILENAME = "SELECT min(MEMBER), group# FROM V$LOGFILE group by group# order by 2";
     static final String CURRENT_SCN = "SELECT CURRENT_SCN FROM V$DATABASE";
-    static final String START_LOGMINER_FOR_ARCHIVE_STATEMENT = "BEGIN SYS.DBMS_LOGMNR.START_LOGMNR(" +
-            "OPTIONS => DBMS_LOGMNR.DICT_FROM_ONLINE_CATALOG + DBMS_LOGMNR.COMMITTED_DATA_ONLY); END;";
     static final String END_LOGMNR = "BEGIN SYS.DBMS_LOGMNR.END_LOGMNR(); END;";
     static final String OLDEST_FIRST_CHANGE = "SELECT MIN(FIRST_CHANGE#) FROM V$LOG";
-    static final String OLDEST_ARCHIVED_CHANGE = "SELECT MIN(FIRST_CHANGE#) FROM V$ARCHIVED_LOG";
-    static final String LATEST_SCN_FROM_ARCHIVED_LOG = "SELECT MAX(NEXT_CHANGE#) FROM V$ARCHIVED_LOG"; // todo replace with ARCHIVELOG_CHANGE# from v$database
-    static final String ALL_ARCHIVED_LOGS_NAMES_FOR_OFFSET = "SELECT NAME AS FILE_NAME, NEXT_CHANGE# AS NEXT_CHANGE " +
-            "FROM V$ARCHIVED_LOG WHERE FIRST_CHANGE# BETWEEN ? AND ? AND STATUS = 'A' AND STANDBY_DEST='NO' ORDER BY NEXT_CHANGE ASC";
     static final String ALL_ONLINE_LOGS_NAMES_FOR_OFFSET = "SELECT MIN(F.MEMBER) AS FILE_NAME, L.NEXT_CHANGE# AS NEXT_CHANGE " +
             "            FROM V$LOG L, V$LOGFILE F " +
             "            WHERE F.GROUP# = L.GROUP# " +
@@ -45,6 +38,7 @@ public class SqlUtils {
             "   WHERE H.SEQUENCE# = L.SEQUENCE#" +
             "   AND F.GROUP#=L.GROUP#" +
             "   AND L.FIRST_TIME > TRUNC(SYSDATE) ORDER BY H.SEQUENCE# ASC";
+    static final String CURRENT_REDO_LOG_NAME = "select f.member from v$log log, v$logfile f  where log.group#=f.group# and log.status='CURRENT'";
     private static final Logger LOGGER = LoggerFactory.getLogger(SqlUtils.class);
 
     // todo handle INVALID file member (report somehow and continue to work with valid file), handle adding multiplexed files,
@@ -175,10 +169,11 @@ public class SqlUtils {
      * @return IN predicate or empty string if number of whitelisted tables exceeds 1000
      */
     private static String buildTableInPredicate(List<String> tables) {
-        if (tables.size() > 1000) {
+        if (tables.size() == 0 || tables.size() > 1000) {
             LOGGER.warn(" Cannot apply {} whitelisted tables condition", tables.size());
             return "";
         }
+
         StringJoiner tableNames = new StringJoiner(",");
         tables.forEach(table -> tableNames.add("'" + table + "'"));
         return " AND table_name IN (" + tableNames + ") AND SEG_NAME IN (" + tableNames + ") ";

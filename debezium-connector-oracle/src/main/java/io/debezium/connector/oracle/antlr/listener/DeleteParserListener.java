@@ -44,7 +44,14 @@ public class DeleteParserListener extends BaseDmlStringParserListener {
     public void enterDelete_statement(PlSqlParser.Delete_statementContext ctx) {
         init(ctx.general_table_ref().dml_table_expression_clause());
         newColumnValues.clear();
-        parseRecursively(ctx.where_clause().expression().logical_expression());
+        PlSqlParser.Table_aliasContext tableAlias = ctx.general_table_ref().table_alias();
+        alias = tableAlias == null ? "" : tableAlias.getText().toUpperCase();
+        PlSqlParser.Where_clauseContext where =  ctx.where_clause();
+        if (where != null) {
+            parseRecursively(ctx.where_clause().expression().logical_expression());
+        } else {
+            oldColumnValues.clear();
+        }
         super.enterDelete_statement(ctx);
     }
 

@@ -5,15 +5,16 @@
  */
 package io.debezium.jdbc;
 
-import java.util.Set;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.function.Predicate;
-
 import io.debezium.annotation.Immutable;
 import io.debezium.config.Configuration;
 import io.debezium.config.Field;
 import io.debezium.util.Collect;
+import org.apache.kafka.common.config.ConfigDef.Type;
+
+import java.util.Set;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * A specialized configuration for the Debezium driver. This defines several known {@link io.debezium.config.Field
@@ -56,10 +57,25 @@ public interface JdbcConfiguration extends Configuration {
     public static final Field ON_CONNECT_STATEMENTS = Field.create("initial.statements", "A semicolon separated list of statements to be executed on connection");
 
     /**
+     * An optional field for datasource factory class that will be used to build the datasource connection pool.
+     */
+    public static final Field CONNECTION_FACTORY_CLASS = Field.create("connection.factory.class")
+            .withDescription("The factory class for creation of datasource connection pool")
+            .withValidation(Field::isOptional);
+
+    public static final Field CONNECTION_TIMEOUT_MS = Field.create("connection.timeout.ms")
+            .withDisplayName("The maximum time (ms) to wait for a connection from the pool")
+            .withType(Type.INT)
+            .withDefault(600000)
+            .withValidation(Field::isOptional);
+
+
+    /**
      * The set of names of the pre-defined JDBC configuration fields, including {@link #DATABASE}, {@link #USER},
      * {@link #PASSWORD}, {@link #HOSTNAME}, and {@link #PORT}.
      */
-    public static Set<String> ALL_KNOWN_FIELDS = Collect.unmodifiableSet(Field::name, DATABASE, USER, PASSWORD, HOSTNAME, PORT, ON_CONNECT_STATEMENTS);
+    public static Set<String> ALL_KNOWN_FIELDS = Collect.unmodifiableSet(Field::name, DATABASE, USER, PASSWORD, HOSTNAME, PORT, ON_CONNECT_STATEMENTS,
+            CONNECTION_FACTORY_CLASS, CONNECTION_TIMEOUT_MS);
 
     /**
      * Obtain a {@link JdbcConfiguration} adapter for the given {@link Configuration}.
@@ -144,6 +160,26 @@ public interface JdbcConfiguration extends Configuration {
          */
         default Builder withPort(int port) {
             return with(PORT, port);
+        }
+
+        /**
+         * Use the given datasource factory class in the resulting configuration.
+         *
+         * @param datasourceFactoryClassName the datasource factory class name
+         * @return this builder object so methods can be chained together; never null
+         */
+        default Builder withDatasourceClass(String datasourceFactoryClassName) {
+            return with(CONNECTION_FACTORY_CLASS, datasourceFactoryClassName);
+        }
+
+        /**
+         * Use the given connection timeout in the resulting configuration.
+         *
+         * @param connectionTimeoutMs connection timeout in ms
+         * @return this builder object so methods can be chained together; never null
+         */
+        default Builder withConnectionTimeoutMs(int connectionTimeoutMs) {
+            return with(CONNECTION_TIMEOUT_MS, connectionTimeoutMs);
         }
     }
 
@@ -320,5 +356,23 @@ public interface JdbcConfiguration extends Configuration {
      */
     default String getPassword() {
         return getString(PASSWORD);
+    }
+
+    /**
+     * Get the datasource factory property from the configuration.
+     *
+     * @return the specified value, or null if there is none.
+     */
+    default String getConnectionFactoryClassName() {
+        return getString(CONNECTION_FACTORY_CLASS);
+    }
+
+    /**
+     * Get the connection timeout from the configuration.
+     *
+     * @return the specified value, or null if there is none.
+     */
+    default int getConnectionTimeoutMs() {
+        return getInteger(CONNECTION_TIMEOUT_MS);
     }
 }

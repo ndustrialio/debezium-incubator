@@ -41,6 +41,11 @@
               <groupId>org.antlr</groupId>
               <artifactId>antlr4-runtime</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.github.jsqlparser</groupId>
+            <artifactId>jsqlparser</artifactId>
+            <version>2.1</version>
+        </dependency>
 
         <!-- Testing -->
         <dependency>

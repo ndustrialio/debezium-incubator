@@ -19,8 +19,8 @@ import io.debezium.relational.Table;
 import io.debezium.relational.TableEditor;
 import io.debezium.relational.TableId;
 
-import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getColumnName;
-import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getTableName;
+import static io.debezium.connector.oracle.antlr.listener.ParserUtils.getColumnName;
+import static io.debezium.connector.oracle.antlr.listener.ParserUtils.getTableName;
 
 public class CreateTableParserListener extends PlSqlParserBaseListener {
 
@@ -66,7 +66,7 @@ public class CreateTableParserListener extends PlSqlParserBaseListener {
     @Override
     public void enterColumn_definition(PlSqlParser.Column_definitionContext ctx) {
         parser.runIfNotNull(() -> {
-            String columnName = ParserListenerUtils.stripeQuotes(getColumnName(ctx.column_name()));
+            String columnName = ParserUtils.stripeQuotes(getColumnName(ctx.column_name()));
             ColumnEditor columnEditor = Column.editor().name(columnName);
             if (columnDefinitionParserListener == null) {
                 columnDefinitionParserListener = new ColumnDefinitionParserListener(tableEditor, columnEditor, parser.dataTypeResolver());
@@ -90,7 +90,7 @@ public class CreateTableParserListener extends PlSqlParserBaseListener {
     public void exitOut_of_line_constraint(PlSqlParser.Out_of_line_constraintContext ctx) {
         if(ctx.PRIMARY() != null) {
             List<String> pkColumnNames = ctx.column_name().stream()
-                    .map(ParserListenerUtils::getColumnName)
+                    .map(ParserUtils::getColumnName)
                     .collect(Collectors.toList());
 
             tableEditor.setPrimaryKeyNames(pkColumnNames);
