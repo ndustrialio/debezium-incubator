@@ -36,26 +36,16 @@ public interface LogMinerRowLcr extends LogMinerLcr {
     Envelope.Operation getCommandType();
 
     /**
-     * the commit scn obtained from a Log Miner entry
+     * the scn obtained from a Log Miner entry.
+     * This SCN is not a final SCN, just a candidate.
+     * The actual SCN will be assigned after commit
      * @return it's value
      */
-    BigDecimal getActualCommitScn();
-
-    /**
-     * sets commit scn obtained from a Log Miner entry
-     * @param actualCommitScn the value
-     */
-    void setActualCommitScn(BigDecimal actualCommitScn);
-
-    /**
-     * the scn obtained from a Log Miner entry
-     * @return it's value
-     */
-    BigDecimal getActualScn();
+    BigDecimal getScn();
 
     /**
      * sets scn obtained from a Log Miner entry
-     * @param actualScn it's value
+     * @param scn it's value
      */
-    void setActualScn(BigDecimal actualScn);
+    void setScn(BigDecimal scn);
 }

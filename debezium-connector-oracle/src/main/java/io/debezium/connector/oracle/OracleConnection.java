@@ -18,14 +18,18 @@ import oracle.jdbc.OracleTypes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -100,8 +104,7 @@ public class OracleConnection extends JdbcConnection {
 
     protected Set<TableId> getAllTableIds(String catalogName, String schemaNamePattern, boolean isView) throws SQLException {
 
-        String query = "select table_name, owner from all_tables where table_name not in " +
-                "(select SDO_INDEX_TABLE from ALL_SDO_INDEX_INFO where SDO_INDEX_OWNER like '%" + schemaNamePattern.toUpperCase() + "%')" +
+        String query = "select table_name, owner from all_tables where table_name NOT LIKE 'MDRT_%' AND table_name not LIKE 'MDXT_%' " +
                 " and owner like '%" + schemaNamePattern.toUpperCase() + "%'";
         if (isView){
             query = "select view_name, owner from all_views where owner like '%" + schemaNamePattern.toUpperCase() + "%'";
@@ -129,11 +132,55 @@ public class OracleConnection extends JdbcConnection {
 
     // todo replace metadata with something like this
     private ResultSet getTableColumnsInfo(String schemaNamePattern, String tableName) throws SQLException{
-        String columnQuery = "select column_name, DATA_TYPE, data_length, data_precision, data_scale, default_length, density, char_length from " +
-                "all_tab_columns where owner like '" + schemaNamePattern + "' AND table_name='"+tableName+"'";
+        String columnQuery = "select column_name, data_type, data_length, data_precision, data_scale, default_length, density, char_length from " +
+                "all_tab_columns where owner like '" + schemaNamePattern + "' and table_name='"+tableName+"'";
 
         PreparedStatement statement = connection().prepareStatement(columnQuery);
         return statement.executeQuery();
+    }
+
+    // this is much faster, we will use it until full replacement of the metadata usage TODO
+    public void readSchemaForCapturedTables(Tables tables, String databaseCatalog, String schemaNamePattern,
+                                               ColumnNameFilter columnFilter, boolean removeTablesNotFoundInJdbc, Set<TableId> capturedTables) throws SQLException {
+
+        Set<TableId> tableIdsBefore = new HashSet<>(tables.tableIds());
+
+        DatabaseMetaData metadata = connection().getMetaData();
+        Map<TableId, List<Column>> columnsByTable = new HashMap<>();
+
+        for (TableId tableId : capturedTables) {
+            try (ResultSet columnMetadata = metadata.getColumns(databaseCatalog, schemaNamePattern, tableId.table(), null)) {
+                while (columnMetadata.next()) {
+                    // add all whitelisted columns
+                    readTableColumn(columnMetadata, tableId, columnFilter).ifPresent(column -> {
+                        columnsByTable.computeIfAbsent(tableId, t -> new ArrayList<>())
+                                .add(column.create());
+                    });
+                }
+            }
+        }
+
+        // Read the metadata for the primary keys ...
+        for (Map.Entry<TableId, List<Column>> tableEntry : columnsByTable.entrySet()) {
+            // First get the primary key information, which must be done for *each* table ...
+            List<String> pkColumnNames = readPrimaryKeyNames(metadata, tableEntry.getKey());
+
+            // Then define the table ...
+            List<Column> columns = tableEntry.getValue();
+            Collections.sort(columns);
+            tables.overwriteTable(tableEntry.getKey(), columns, pkColumnNames, null);
+        }
+
+        if (removeTablesNotFoundInJdbc) {
+            // Remove any definitions for tables that were not found in the database metadata ...
+            tableIdsBefore.removeAll(columnsByTable.keySet());
+            tableIdsBefore.forEach(tables::removeTable);
+        }
+
+        for (TableId tableId : capturedTables) {
+            overrideOracleSpecificColumnTypes(tables, tableId, tableId);
+        }
+
     }
 
     @Override
@@ -150,38 +197,42 @@ public class OracleConnection extends JdbcConnection {
             TableId tableIdWithCatalog = new TableId(databaseCatalog, tableId.schema(), tableId.table());
 
             if (tableFilter.isIncluded(tableIdWithCatalog)) {
-                TableEditor editor = tables.editTable(tableId);
-                editor.tableId(tableIdWithCatalog);
-
-                List<String> columnNames = new ArrayList<>(editor.columnNames());
-                for (String columnName : columnNames) {
-                    Column column = editor.columnWithName(columnName);
-                    if (column.jdbcType() == Types.TIMESTAMP) {
-                        editor.addColumn(
-                                column.edit()
-                                    .length(column.scale().orElse(Column.UNSET_INT_VALUE))
-                                    .scale(null)
-                                    .create()
-                                );
-                    }
-                    // NUMBER columns without scale value have it set to -127 instead of null;
-                    // let's rectify that
-                    else if (column.jdbcType() == OracleTypes.NUMBER) {
-                        column.scale()
-                            .filter(s -> s == ORACLE_UNSET_SCALE)
-                            .ifPresent(s -> {
-                                editor.addColumn(
-                                        column.edit()
-                                            .scale(null)
-                                            .create()
-                                        );
-                            });
-                    }
-                }
-                tables.overwriteTable(editor.create());
+                overrideOracleSpecificColumnTypes(tables, tableId, tableIdWithCatalog);
             }
 
             tables.removeTable(tableId);
         }
+    }
+
+    private void overrideOracleSpecificColumnTypes(Tables tables, TableId tableId, TableId tableIdWithCatalog) {
+        TableEditor editor = tables.editTable(tableId);
+        editor.tableId(tableIdWithCatalog);
+
+        List<String> columnNames = new ArrayList<>(editor.columnNames());
+        for (String columnName : columnNames) {
+            Column column = editor.columnWithName(columnName);
+            if (column.jdbcType() == Types.TIMESTAMP) {
+                editor.addColumn(
+                        column.edit()
+                            .length(column.scale().orElse(Column.UNSET_INT_VALUE))
+                            .scale(null)
+                            .create()
+                        );
+            }
+            // NUMBER columns without scale value have it set to -127 instead of null;
+            // let's rectify that
+            else if (column.jdbcType() == OracleTypes.NUMBER) {
+                column.scale()
+                    .filter(s -> s == ORACLE_UNSET_SCALE)
+                    .ifPresent(s -> {
+                        editor.addColumn(
+                                column.edit()
+                                    .scale(null)
+                                    .create()
+                                );
+                    });
+            }
+        }
+        tables.overwriteTable(editor.create());
     }
 }

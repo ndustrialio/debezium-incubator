@@ -9,10 +9,10 @@ import io.debezium.connector.oracle.OracleConnectorConfig;
 import org.junit.Test;
 
 import java.math.BigDecimal;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.logging.Logger;
+import java.math.BigInteger;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.fest.assertions.Assertions.assertThat;
 
@@ -20,7 +20,6 @@ public class LogMinerUtilsTest {
 
     private static final BigDecimal SCN = BigDecimal.ONE;
     private static final BigDecimal OTHER_SCN = BigDecimal.TEN;
-    private static final Logger LOGGER = Logger.getLogger(LogMinerUtilsTest.class.getName());
 
     @Test
     public void testStartLogMinerStatement() {
@@ -46,20 +45,18 @@ public class LogMinerUtilsTest {
         assertThat(statement.contains("DBMS_LOGMNR.CONTINUOUS_MINE"));
     }
 
+    // todo delete after replacement == -1 in the code
     @Test
-    public void testDuration() throws Exception {
-        AtomicReference<Duration> lagFromTheSource = new AtomicReference<>();
-        Instant changeTime = Instant.now();
-        Thread.sleep(100);
-        lagFromTheSource.set(Duration.between(changeTime, Instant.now()));
-        LOGGER.info("time: "+ lagFromTheSource.get().toMillis());
+    public void testConversion() {
+        Map<String, String> map = new HashMap<>();
+        map.put("one",   "1001");
+        map.put("two",   "1002");
+        map.put("three", "1007");
+        map.put("four",  "18446744073709551615");
+        Map<String, Long> res = map.entrySet().stream().
+                filter(entry -> new BigDecimal(entry.getValue()).longValue() > 1003 || new BigDecimal(entry.getValue()).longValue() == -1).
+                collect(Collectors.toMap(Map.Entry::getKey, e -> new BigDecimal(e.getValue()).longValue() == -1 ? Long.MAX_VALUE : new BigInteger(e.getValue()).longValue()));
 
-        Double value = Double.parseDouble("18446744073709551615");
-        value = Double.parseDouble("12333");
-        Long value1 = 12334L;
-        if (value > value1) {
-            String s = "say hello";
-        }
+        assertThat(res).isNotEmpty();
     }
-
 }

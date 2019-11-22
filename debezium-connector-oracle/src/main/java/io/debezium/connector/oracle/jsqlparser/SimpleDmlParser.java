@@ -87,13 +87,23 @@ public class SimpleDmlParser {
      * @param tables debezium Tables
      */
     public void parse(String dmlContent, Tables tables, String txId){
-        if (!dmlContent.endsWith(";")) {
-            dmlContent = dmlContent + ";";
-        }
-        newColumnValues.clear();
-        oldColumnValues.clear();
-
         try {
+            if (dmlContent == null) {
+                LOGGER.error("Cannot parse NULL , transaction: {}", txId);
+                rowLCR = null;
+                return;
+            }
+            // todo investigate: happens on CTAS
+            if (dmlContent.endsWith(";null;")) {
+                dmlContent = dmlContent.substring(0, dmlContent.lastIndexOf(";null;"));
+            }
+            if (!dmlContent.endsWith(";")) {
+                dmlContent = dmlContent + ";";
+            }
+
+            newColumnValues.clear();
+            oldColumnValues.clear();
+
             Statement st = pm.parse(new StringReader(dmlContent));
             if (st instanceof Update){
                 parseUpdate(tables, (Update) st);
@@ -116,11 +126,12 @@ public class SimpleDmlParser {
                 rowLCR = new LogMinerRowLcrImpl(Envelope.Operation.DELETE, Collections.emptyList(), actualOldValues);
 
             } else {
-                throw new UnsupportedOperationException("Statement " + st + "is not supported yet");
+                throw new UnsupportedOperationException("Operation " + st + " is not supported yet");
             }
 
         } catch (Throwable e) {
-            LOGGER.error("Cannot parse statement : {}, transaction: {}", dmlContent, txId);
+            LOGGER.error("Cannot parse statement : {}, transaction: {}, due to the {}", dmlContent, txId, e);
+            rowLCR = null;
         }
 
     }

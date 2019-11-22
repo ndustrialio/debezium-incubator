@@ -12,6 +12,7 @@ import io.debezium.metrics.Metrics;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -25,38 +26,40 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     private AtomicLong currentScn = new AtomicLong();
     private AtomicInteger capturedDmlCount = new AtomicInteger();
     private AtomicReference<String> currentLogFileName;
-    private AtomicReference<String[]> redoLogStatuses;
+    private AtomicReference<String[]> redoLogStatus;
     private AtomicReference<String[]> switchHistory;
-    private AtomicReference<String[]> redoLogFileStatuses;
-    private AtomicReference<String[]> redoLogSequences;
-    private AtomicReference<Duration> lastFetchingQueryDuration;
-    private AtomicReference<Duration> averageFetchingQueryDuration = new AtomicReference<>();
-    private AtomicInteger fetchingQueryCount = new AtomicInteger();
-    private AtomicReference<Duration> lastProcessedCapturedBatchDuration;
+    private AtomicReference<Duration> lastLogMinerQueryDuration = new AtomicReference<>();
+    private AtomicReference<Duration> averageLogMinerQueryDuration = new AtomicReference<>();
+    private AtomicInteger logMinerQueryCount = new AtomicInteger();
+    private AtomicReference<Duration> lastProcessedCapturedBatchDuration = new AtomicReference<>();
     private AtomicInteger processedCapturedBatchCount = new AtomicInteger();
     private AtomicReference<Duration> averageProcessedCapturedBatchDuration = new AtomicReference<>();
-    private AtomicInteger maxMiningBatchSize = new AtomicInteger();
-    private AtomicInteger millisecondsToSleepBetweenMiningQuery = new AtomicInteger();
-    private AtomicInteger fetchedRecordsSizeLimitToFallAsleep = new AtomicInteger();
+    private AtomicInteger maxBatchSize = new AtomicInteger();
+    private AtomicInteger millisecondToSleepBetweenMiningQuery = new AtomicInteger();
+    private AtomicInteger fetchedRecordSizeLimitToFallAsleep = new AtomicInteger();
+
+    private AtomicBoolean ctas = new AtomicBoolean();
 
     LogMinerMetrics(CdcSourceTaskContext taskContext) {
         super(taskContext, "log-miner");
 
-        maxMiningBatchSize.set(1000);
-        millisecondsToSleepBetweenMiningQuery.set(500);
-        fetchedRecordsSizeLimitToFallAsleep.set(50);
+        maxBatchSize.set(2000);
+        millisecondToSleepBetweenMiningQuery.set(500);
+        fetchedRecordSizeLimitToFallAsleep.set(50);
 
         currentScn.set(-1);
-        capturedDmlCount.set(-1);
+        capturedDmlCount.set(0);
         currentLogFileName = new AtomicReference<>();
-        redoLogFileStatuses = new AtomicReference<>();
-        redoLogStatuses = new AtomicReference<>();
-        redoLogSequences = new AtomicReference<>();
+        redoLogStatus = new AtomicReference<>();
         switchHistory = new AtomicReference<>();
-        lastFetchingQueryDuration = new AtomicReference<>();
-        fetchingQueryCount.set(-1);
-        lastProcessedCapturedBatchDuration = new AtomicReference<>();
-        processedCapturedBatchCount.set(-1);
+        averageLogMinerQueryDuration.set(Duration.ZERO);
+        lastLogMinerQueryDuration.set(Duration.ZERO);
+        logMinerQueryCount.set(0);
+        lastProcessedCapturedBatchDuration.set(Duration.ZERO);
+        processedCapturedBatchCount.set(0);
+        averageProcessedCapturedBatchDuration.set(Duration.ZERO);
+
+        ctas.set(false);
     }
 
     // setters
@@ -72,9 +75,9 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
         currentLogFileName.set(name);
     }
 
-    public void setRedoLogState(Map<String, String> statuses){
-        String[] statusArray = statuses.entrySet().stream().map(e -> e.getKey() + " | " + e.getValue()).toArray(String[]::new);
-        redoLogStatuses.set(statusArray);
+    public void setRedoLogStatus(Map<String, String> status){
+        String[] statusArray = status.entrySet().stream().map(e -> e.getKey() + " | " + e.getValue()).toArray(String[]::new);
+        redoLogStatus.set(statusArray);
     }
 
     public void setSwitchHistory(Map<String, String> history) {
@@ -82,18 +85,8 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
         switchHistory.set(historyArray);
     }
 
-    public void setRedoLogFileStatuses(Map<String, String> statuses) {
-        String[] statusArray = statuses.entrySet().stream().map(e -> e.getKey() + " | " + e.getValue()).toArray(String[]::new);
-        redoLogFileStatuses.set(statusArray);
-    }
-
-    public void setRedoLogSequences(Map<String, String> sequences){
-        String[] sequenceArray = sequences.entrySet().stream().map(e -> e.getKey() + " | " + e.getValue()).toArray(String[]::new);
-        redoLogSequences.set(sequenceArray);
-    }
-
-    public void setLastFetchingQueryDuration(Duration fetchDuration){
-        setDurationMetrics(fetchDuration, lastFetchingQueryDuration, fetchingQueryCount, averageFetchingQueryDuration);
+    public void setLastLogMinerQueryDuration(Duration fetchDuration){
+        setDurationMetrics(fetchDuration, lastLogMinerQueryDuration, logMinerQueryCount, averageLogMinerQueryDuration);
     }
 
     public void setProcessedCapturedBatchDuration(Duration processDuration){
@@ -107,23 +100,18 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     }
 
     @Override
-    public int getNumberOfFetchedDml() {
+    public int getCapturedDmlCount() {
         return capturedDmlCount.get();
     }
 
     @Override
-    public String getCurrentRedoLogFile() {
+    public String getCurrentRedoLogFileName() {
         return currentLogFileName.get();
     }
 
     @Override
-    public String[] getRedoLogStatuses() {
-        return redoLogStatuses.get();
-    }
-
-    @Override
-    public String[] getRedoLogFileState() {
-        return redoLogFileStatuses.get();
+    public String[] getRedoLogStatus() {
+        return redoLogStatus.get();
     }
 
     @Override
@@ -132,81 +120,80 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     }
 
     @Override
-    public String[] getSequences() {
-        return redoLogSequences.get();
+    public Long getLastLogMinerQueryDuration() {
+        return lastLogMinerQueryDuration.get() == null ? 0 : lastLogMinerQueryDuration.get().toMillis();
     }
 
     @Override
-    public int getTodaySwitchCount() {
-        return switchHistory.get().length;
+    public Long getAverageLogMinerQueryDuration() {
+        return averageLogMinerQueryDuration.get() == null ? 0 : averageLogMinerQueryDuration.get().toMillis();
     }
 
     @Override
-    public Long getLastFetchingQueryDuration() {
-        return lastFetchingQueryDuration.get() == null ? 0 : lastFetchingQueryDuration.get().toMillis();
-    }
-
-    @Override
-    public Long getAverageFetchingQueryDuration() {
-        return averageFetchingQueryDuration.get() == null ? 0 : averageFetchingQueryDuration.get().toMillis();
-    }
-
-    @Override
-    public Long getDurationOfLastProcessedBatch() {
+    public Long getLastProcessedCapturedBatchDuration() {
         return lastProcessedCapturedBatchDuration.get() == null ? 0 : lastProcessedCapturedBatchDuration.get().toMillis();
     }
 
     @Override
-    public int getExecutedFetchingQueriesCount() {
-        return fetchingQueryCount.get();
+    public int getLogMinerQueryCount() {
+        return logMinerQueryCount.get();
     }
 
     @Override
-    public int getProcessedBatchCount() {
+    public int getProcessedCapturedBatchCount() {
         return processedCapturedBatchCount.get();
     }
 
     @Override
-    public Long getAverageProcessedBatchDuration() {
+    public Long getAverageProcessedCapturedBatchDuration() {
         return averageProcessedCapturedBatchDuration.get() == null ? 0 : averageProcessedCapturedBatchDuration.get().toMillis();
     }
 
     @Override
-    public int getMaxMiningBatchSize() {
-        return maxMiningBatchSize.get();
+    public int getMaxBatchSize() {
+        return maxBatchSize.get();
     }
 
     @Override
-    public int getMillisecondsToSleepBetweenMiningQuery() {
-        return millisecondsToSleepBetweenMiningQuery.get();
+    public int getMillisecondToSleepBetweenMiningQuery() {
+        return millisecondToSleepBetweenMiningQuery.get();
     }
 
     @Override
-    public int getFetchedRecordsSizeLimitToFallAsleep() {
-        return fetchedRecordsSizeLimitToFallAsleep.get();
+    public int getFetchedRecordSizeLimitToFallAsleep() {
+        return fetchedRecordSizeLimitToFallAsleep.get();
     }
 
     // MBean accessible setters
     @Override
-    public void setMaxMiningBatchSize(int size) {
+    public void setMaxBatchSize(int size) {
         if (size >= 100 && size <= 10_000) {
-            maxMiningBatchSize.set(size);
+            maxBatchSize.set(size);
         }
     }
 
     @Override
-    public void setMillisecondsToSleepBetweenMiningQuery(int milliseconds) {
-        if (milliseconds > 0 && milliseconds < 3000){
-            millisecondsToSleepBetweenMiningQuery.set(milliseconds);
+    public void setMillisecondToSleepBetweenMiningQuery(int milliseconds) {
+        if (milliseconds >= 10 && milliseconds <= 2000){
+            millisecondToSleepBetweenMiningQuery.set(milliseconds);
         }
-
     }
 
     @Override
-    public void setFetchedRecordsSizeLimitToFallAsleep(int size) {
-        if (size > 0 && size < 500) {
-            fetchedRecordsSizeLimitToFallAsleep.set(size);
+    public void setFetchedRecordSizeLimitToFallAsleep(int size) {
+        if (size >= 50 && size <= 200) {
+            fetchedRecordSizeLimitToFallAsleep.set(size);
         }
+    }
+
+    @Override
+    public boolean getCTAS() {
+        return ctas.get();
+    }
+
+    @Override
+    public void setCTAS(boolean ctas) {
+//        this.ctas.set(ctas);
     }
 
     // private methods
@@ -225,20 +212,18 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
         return "LogMinerMetrics{" +
                 "currentScn=" + currentScn.get() +
                 ", currentLogFileName=" + currentLogFileName.get() +
-                ", redoLogStatuses=" + Arrays.toString(redoLogStatuses.get()) +
+                ", redoLogStatus=" + Arrays.toString(redoLogStatus.get()) +
                 ", capturedDmlCount=" + capturedDmlCount.get() +
                 ", switchHistory=" + Arrays.toString(switchHistory.get()) +
-                ", redoLogFileStatuses=" + Arrays.toString(redoLogFileStatuses.get()) +
-                ", redoLogSequences=" + Arrays.toString(redoLogSequences.get()) +
-                ", lastFetchingQueryDuration=" + lastFetchingQueryDuration.get().toMillis() +
-                ", fetchingQueryCount=" + fetchingQueryCount.get() +
-                ", averageFetchingQueryDuration=" + averageFetchingQueryDuration.get().toMillis() +
-                ", lastProcessedCapturedBatchDuration=" + lastProcessedCapturedBatchDuration.get().toMillis() +
+                ", lastLogMinerQueryDuration=" + lastLogMinerQueryDuration.get() +
+                ", logMinerQueryCount=" + logMinerQueryCount.get() +
+                ", averageLogMinerQueryDuration=" + averageLogMinerQueryDuration.get() +
+                ", lastProcessedCapturedBatchDuration=" + lastProcessedCapturedBatchDuration.get() +
                 ", processedCapturedBatchCount=" + processedCapturedBatchCount.get() +
-                ", averageProcessedCapturedBatchDuration=" + averageProcessedCapturedBatchDuration.get().toMillis() +
-                ", maxMiningBatchSize=" + maxMiningBatchSize.get() +
-                ", millisecondsToSleepBetweenMiningQuery=" + millisecondsToSleepBetweenMiningQuery.get() +
-                ", maxMiningBatchSize=" + maxMiningBatchSize.get() +
+                ", averageProcessedCapturedBatchDuration=" + averageProcessedCapturedBatchDuration.get() +
+                ", maxBatchSize=" + maxBatchSize.get() +
+                ", millisecondToSleepBetweenMiningQuery=" + millisecondToSleepBetweenMiningQuery.get() +
+                ", maxBatchSize=" + maxBatchSize.get() +
                 '}';
     }
 }

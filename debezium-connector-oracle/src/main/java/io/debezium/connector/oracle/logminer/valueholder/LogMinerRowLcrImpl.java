@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * This class mimics the API of oracle.streams.DefaultRowLCR class (LCR stands for logical change record)
+ * This class holds LCR data (similar the API of oracle.streams.DefaultRowLCR class). LCR stands for logical change record
  *
  */
 public class LogMinerRowLcrImpl implements LogMinerRowLcr {
@@ -25,8 +25,7 @@ public class LogMinerRowLcrImpl implements LogMinerRowLcr {
     private String objectName;
     private Timestamp sourceTime;
     private String transactionId;
-    private BigDecimal actualCommitScn;
-    private BigDecimal actualScn;
+    private BigDecimal scn;
 
     public LogMinerRowLcrImpl(Envelope.Operation commandType, List<LogMinerColumnValue> newLmColumnValues, List<LogMinerColumnValue> oldLmColumnValues) {
         this.commandType = commandType;
@@ -90,23 +89,13 @@ public class LogMinerRowLcrImpl implements LogMinerRowLcr {
     }
 
     @Override
-    public BigDecimal getActualCommitScn() {
-        return actualCommitScn;
+    public BigDecimal getScn() {
+        return scn;
     }
 
     @Override
-    public void setActualCommitScn(BigDecimal actualCommitScn) {
-        this.actualCommitScn = actualCommitScn;
-    }
-
-    @Override
-    public BigDecimal getActualScn() {
-        return actualScn;
-    }
-
-    @Override
-    public void setActualScn(BigDecimal actualScn) {
-        this.actualScn = actualScn;
+    public void setScn(BigDecimal scn) {
+        this.scn = scn;
     }
 
     @Override
@@ -138,8 +127,7 @@ public class LogMinerRowLcrImpl implements LogMinerRowLcr {
                 ", objectName='" + objectName + '\'' +
                 ", sourceTime=" + sourceTime +
                 ", transactionId='" + transactionId + '\'' +
-                ", actualCommitScn=" + actualCommitScn +
-                ", actualScn=" + actualScn +
+                ", scn=" + scn +
                 '}';
     }
 }

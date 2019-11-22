@@ -5,6 +5,8 @@
  */
 package io.debezium.connector.oracle.logminer;
 
+import java.util.Set;
+
 /**
  * This interface exposes TransactionalBuffer metrics
  */
@@ -36,7 +38,7 @@ public interface TransactionalBufferMetricsMXBean {
      *
      * @return average number of captured and parsed DML per second in the in-memory buffer
      */
-    long getDmlThroughput();
+    long getCapturedDmlThroughput();
 
     /**
      * Exposes number of transaction, buffered in memory
@@ -46,16 +48,41 @@ public interface TransactionalBufferMetricsMXBean {
     int getNumberOfActiveTransactions();
 
     /**
-     * Exposes the oldest(smallest) in the in-memory buffer SCN
+     * Exposes the oldest(smallest) SCN in the Transactional Buffer
      *
      * @return oldest SCN
      */
     Long getOldestScn();
 
     /**
-     * This is to get the lag between latest captured change timestamp and time of it's placement in the buffer
+     * This is to get the lag between latest captured change timestamp in REDO LOG and time of it's placement in the buffer
      * @return lag in milliseconds
      */
     long getLagFromSource();
+
+    /**
+     * This is to get max value of the time difference between logging of source DB records into redo log and capturing it by Log Miner
+     * @return value in milliseconds
+     */
+    long getMaxLagFromSource();
+
+    /**
+     * This is to get min value of the time difference between logging of source DB records into redo log and capturing it by Log Miner
+     * @return value in milliseconds
+     */
+    long getMinLagFromSource();
+
+    /**
+     * This is to get average value of the time difference between logging of source DB records into redo log and capturing it by Log Miner.
+     * Average is calculated as summary of all lags / number of captured DB changes
+     * @return value in milliseconds
+     */
+    long getAverageLagFromSource();
+
+    /**
+     * This is to get list of removed transactions from the Transactional Buffer
+     * @return count
+     */
+    Set<String> getAbandonedTransactionIds();
 
 }
