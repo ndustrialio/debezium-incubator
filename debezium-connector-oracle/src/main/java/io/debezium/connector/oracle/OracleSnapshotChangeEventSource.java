@@ -196,13 +196,22 @@ public class OracleSnapshotChangeEventSource extends HistorizedRelationalSnapsho
             }
 
             // todo: slow, don't use metadata for Oracle
-            jdbcConnection.readSchema(
+//            jdbcConnection.readSchema(
+//                    snapshotContext.tables,
+//                    snapshotContext.catalogName,
+//                    schema,
+//                    connectorConfig.getTableFilters().dataCollectionFilter(),
+//                    null,
+//                    false
+//            );
+            // todo: faster, but still slow
+            jdbcConnection.readSchemaForCapturedTables(
                     snapshotContext.tables,
                     snapshotContext.catalogName,
                     schema,
-                    connectorConfig.getTableFilters().dataCollectionFilter(),
                     null,
-                    false
+                    false,
+                    snapshotContext.capturedTables
             );
         }
     }

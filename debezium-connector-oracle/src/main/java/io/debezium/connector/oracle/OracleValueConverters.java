@@ -30,6 +30,8 @@ import oracle.sql.TIMESTAMPLTZ;
 import oracle.sql.TIMESTAMPTZ;
 import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.SchemaBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
@@ -43,6 +45,8 @@ import static io.debezium.util.NumberConversions.BYTE_FALSE;
 public class OracleValueConverters extends JdbcValueConverters {
 
     private static final Pattern INTERVAL_DAY_SECOND_PATTERN = Pattern.compile("([+\\-])?(\\d+) (\\d+):(\\d+):(\\d+).(\\d+)");
+    private static final Logger LOGGER = LoggerFactory.getLogger(OracleValueConverters.class);
+
 
     private final OracleConnection connection;
 
@@ -52,7 +56,7 @@ public class OracleValueConverters extends JdbcValueConverters {
 
     @Override
     public SchemaBuilder schemaBuilder(Column column) {
-        logger.debug("Building schema for column {} of type {} named {} with constraints ({},{})",
+        LOGGER.debug("Building schema for column {} of type {} named {} with constraints ({},{})",
                 column.name(),
                 column.jdbcType(),
                 column.typeName(),
@@ -101,7 +105,7 @@ public class OracleValueConverters extends JdbcValueConverters {
                 else if (width < 5) {
                     return SchemaBuilder.int16();
                 }
-                else if (width < 10) {
+                else if (width < 10 || (width == 10 && scale == 0)) {
                     return SchemaBuilder.int32();
                 }
                 else if (width < 19) {
@@ -174,7 +178,7 @@ public class OracleValueConverters extends JdbcValueConverters {
                 else if (width < 5) {
                     return data -> convertNumericAsSmallInt(column, fieldDefn, data);
                 }
-                else if (width < 10) {
+                else if (width < 10 || (width == 10 && scale == 0)) {
                     return data -> convertNumericAsInteger(column, fieldDefn, data);
                 }
                 else if (width < 19) {

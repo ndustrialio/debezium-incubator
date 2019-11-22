@@ -22,57 +22,71 @@ public interface LogMinerMetricsMXBean {
      *
      * @return full path or NULL if an exception occurs.
      */
-    String getCurrentRedoLogFile();
+    String getCurrentRedoLogFileName();
 
     /**
      * Exposes states of redo logs: current, active, inactive, unused ...
      * @return array of: (redo log name | status) elements
      */
-    String[] getRedoLogStatuses();
+    String[] getRedoLogStatus();
 
     /**
-     * Exposes states of redo logs files: valid, invalid
-     * @return array of: (redo log file name | status) elements
-     */
-    String[] getRedoLogFileState();
-
-    /**
-     * fetches history of redo switches for the last hour
+     * fetches history of redo switches for the 7 days todo
      * @return array of: (redo log file name | time of switch) elements
      */
     String[] getSwitchHistory();
 
     /**
+     * @return number of milliseconds last Log Miner query took
+     */
+    Long getLastLogMinerQueryDuration();
+
+    /**
+     * @return number of captured DML since the connector is up
+     */
+    int getCapturedDmlCount();
+
+    /**
+     * @return number of Log Miner view queries since the connector is up
+     */
+    int getLogMinerQueryCount();
+
+    /**
+     * @return average duration of Log Miner view query
+     */
+    Long getAverageLogMinerQueryDuration();
+
+    /**
+     * Log Miner view query returns number of captured DML , Commit and Rollback. This is what we call a batch.
+     * @return duration of the last batch processing, which includes parsing and dispatching
+     */
+    Long getLastProcessedCapturedBatchDuration();
+
+    /**
+     * Log Miner view query returns number of captured DML , Commit and Rollback. This is what we call a batch.
+     * @return number of all processed batches , which includes parsing and dispatching
+     */
+    int getProcessedCapturedBatchCount();
+
+    /**
      * todo Java doc
      * @return
      */
-    String[] getSequences();
+    Long getAverageProcessedCapturedBatchDuration();
 
-    int getTodaySwitchCount();
+    int getMaxBatchSize();
 
-    Long getLastFetchingQueryDuration();
+    void setMaxBatchSize(int size);
 
-    int getNumberOfFetchedDml();
+    int getMillisecondToSleepBetweenMiningQuery();
 
-    int getExecutedFetchingQueriesCount();
+    void setMillisecondToSleepBetweenMiningQuery(int milliseconds);
 
-    Long getAverageFetchingQueryDuration();
+    int getFetchedRecordSizeLimitToFallAsleep();
 
-    Long getDurationOfLastProcessedBatch();
+    void setFetchedRecordSizeLimitToFallAsleep(int size);
 
-    int getProcessedBatchCount();
+    boolean getCTAS();
 
-    Long getAverageProcessedBatchDuration();
-
-    int getMaxMiningBatchSize();
-
-    void  setMaxMiningBatchSize(int size);
-
-    int getMillisecondsToSleepBetweenMiningQuery();
-
-    void setMillisecondsToSleepBetweenMiningQuery(int milliseconds);
-
-    int getFetchedRecordsSizeLimitToFallAsleep();
-
-    void setFetchedRecordsSizeLimitToFallAsleep(int size);
+    void setCTAS(boolean ctas);
 }
