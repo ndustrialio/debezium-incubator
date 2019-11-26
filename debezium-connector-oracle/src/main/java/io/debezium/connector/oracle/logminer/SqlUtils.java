@@ -34,22 +34,8 @@ public class SqlUtils {
             "            ORDER BY 2";
 
     static final String REDO_LOGS_STATUS = "SELECT F.MEMBER, R.STATUS FROM V$LOGFILE F, V$LOG R WHERE F.GROUP# = R.GROUP# ORDER BY 2";
-    static final String REDO_LOG_FILES_STATUS = "SELECT MEMBER, STATUS FROM V$LOGFILE ORDER BY 2";
-    static final String REDO_LOGS_SEQUENCE = "SELECT F.MEMBER, R.SEQUENCE# FROM V$LOGFILE F, V$LOG R WHERE F.GROUP# = R.GROUP# order by 2";
-    static final String SWITCH_HISTORY = "SELECT F.MEMBER, SUBSTR(TO_CHAR(H.FIRST_TIME, 'HH24:MI'), 1, 15) SWITCH_TIME" +
-            "   FROM V$LOG_HISTORY H, V$LOG L, V$LOGFILE F " +
-            "   WHERE H.SEQUENCE# = L.SEQUENCE#" +
-            "   AND F.GROUP#=L.GROUP#" +
-            "   AND L.FIRST_TIME > TRUNC(SYSDATE) ORDER BY H.SEQUENCE# ASC";
-    // todo
-    static final String SWITCH_HISTORY_TOTAL = "SELECT F.MEMBER NAME, SUBSTR(TO_CHAR(H.FIRST_TIME, 'HH24:MI'), 1, 15) SWITCH_TIME\n" +
-            "FROM V$LOG_HISTORY H, V$LOG L, V$LOGFILE F\n" +
-            "WHERE H.SEQUENCE# = L.SEQUENCE# AND F.GROUP#=L.GROUP# AND L.FIRST_TIME > TRUNC(SYSDATE) \n" +
-            "UNION ALL\n" +
-            "SELECT L.NAME NAME, SUBSTR(TO_CHAR(H.FIRST_TIME, 'HH24:MI'), 1, 15) SWITCH_TIME\n" +
-            "FROM V$LOG_HISTORY H, V$ARCHIVED_LOG L\n" +
-            "WHERE H.SEQUENCE# = L.SEQUENCE# AND L.FIRST_TIME > TRUNC(SYSDATE) order by 2; ";
-    static final String SWITCH_HISTORY_TOTAL_COUNT = "select count(*) from (" + SWITCH_HISTORY_TOTAL + ")";
+    static final String SWITCH_HISTORY_TOTAL_COUNT = "select count(1) as \"total\" from v$archived_log where first_time > trunc(sysdate)\n" +
+            "and dest_id = (select dest_id from V$ARCHIVE_DEST_STATUS where status='VALID' and type='LOCAL')";
     static final String CURRENT_REDO_LOG_NAME = "select f.member from v$log log, v$logfile f  where log.group#=f.group# and log.status='CURRENT'";
     private static final Logger LOGGER = LoggerFactory.getLogger(SqlUtils.class);
 

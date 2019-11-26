@@ -27,7 +27,7 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     private AtomicInteger capturedDmlCount = new AtomicInteger();
     private AtomicReference<String> currentLogFileName;
     private AtomicReference<String[]> redoLogStatus;
-    private AtomicReference<String[]> switchHistory;
+    private AtomicInteger switchCounter = new AtomicInteger();
     private AtomicReference<Duration> lastLogMinerQueryDuration = new AtomicReference<>();
     private AtomicReference<Duration> averageLogMinerQueryDuration = new AtomicReference<>();
     private AtomicInteger logMinerQueryCount = new AtomicInteger();
@@ -37,7 +37,6 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     private AtomicInteger maxBatchSize = new AtomicInteger();
     private AtomicInteger millisecondToSleepBetweenMiningQuery = new AtomicInteger();
     private AtomicInteger fetchedRecordSizeLimitToFallAsleep = new AtomicInteger();
-
     private AtomicBoolean ctas = new AtomicBoolean();
 
     LogMinerMetrics(CdcSourceTaskContext taskContext) {
@@ -51,7 +50,7 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
         capturedDmlCount.set(0);
         currentLogFileName = new AtomicReference<>();
         redoLogStatus = new AtomicReference<>();
-        switchHistory = new AtomicReference<>();
+        switchCounter.set(0);
         averageLogMinerQueryDuration.set(Duration.ZERO);
         lastLogMinerQueryDuration.set(Duration.ZERO);
         logMinerQueryCount.set(0);
@@ -80,9 +79,8 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
         redoLogStatus.set(statusArray);
     }
 
-    public void setSwitchHistory(Map<String, String> history) {
-        String[] historyArray = history.entrySet().stream().map(e -> e.getKey() + " | " + e.getValue()).toArray(String[]::new);
-        switchHistory.set(historyArray);
+    public void setSwitchCount(int counter) {
+        switchCounter.set(counter);
     }
 
     public void setLastLogMinerQueryDuration(Duration fetchDuration){
@@ -115,8 +113,8 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     }
 
     @Override
-    public String[] getSwitchHistory() {
-        return switchHistory.get();
+    public int getSwitchCounter() {
+        return switchCounter.get();
     }
 
     @Override
@@ -214,7 +212,7 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
                 ", currentLogFileName=" + currentLogFileName.get() +
                 ", redoLogStatus=" + Arrays.toString(redoLogStatus.get()) +
                 ", capturedDmlCount=" + capturedDmlCount.get() +
-                ", switchHistory=" + Arrays.toString(switchHistory.get()) +
+                ", switchCounter=" + switchCounter.get() +
                 ", lastLogMinerQueryDuration=" + lastLogMinerQueryDuration.get() +
                 ", logMinerQueryCount=" + logMinerQueryCount.get() +
                 ", averageLogMinerQueryDuration=" + averageLogMinerQueryDuration.get() +

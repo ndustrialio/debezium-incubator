@@ -97,8 +97,8 @@ public class LogMinerHelper {
             Map<String, String> logStatuses = getRedoLogStatus(connection);
             metrics.setRedoLogStatus(logStatuses);
 
-            Map<String, String> history = getSwitchHistory(connection);
-            metrics.setSwitchHistory(history);
+            int counter = getSwitchCount(connection);
+            metrics.setSwitchCount(counter);
         } catch (SQLException e) {
             LOGGER.error("Cannot update metrics");
         }
@@ -188,33 +188,21 @@ public class LogMinerHelper {
     }
 
     /**
-     * This fetches online redo log file statuses
+     * This fetches REDO LOG switch count for the last day
      * @param connection privileged connection
-     * @return REDO LOG FILE statuses Map, where key is the file name and value is the status
-     * @throws SQLException if anything unexpected happens
+     * @return counter
      */
-    private static Map<String, String> getRedoLogFileStatus(Connection connection) throws SQLException {
-        return getMap(connection, SqlUtils.REDO_LOG_FILES_STATUS, "file in use");
-    }
-
-    /**
-     * This fetches REDO LOG switch history for the last day
-     * @param connection privileged connection
-     * @return Map of switching history info, where KEY is file name the switch happened from and value - time of the day
-     * @throws SQLException if anything unexpected happens
-     */
-    private static Map<String, String> getSwitchHistory(Connection connection) throws SQLException {
-        return getMap(connection, SqlUtils.SWITCH_HISTORY, "unknown");
-    }
-
-    /**
-     * This fetches online redo log file sequences
-     * @param connection privileged connection
-     * @return REDO LOG FILE statuses Map, where key is the file name and value is the sequence
-     * @throws SQLException if anything unexpected happens
-     */
-    private static Map<String, String> getRedoLogSequence(Connection connection) throws SQLException {
-        return getMap(connection, SqlUtils.REDO_LOGS_SEQUENCE, "unknown");
+    private static int getSwitchCount(Connection connection) {
+        int counter = -1;
+        try {
+            Map<String, String> total = getMap(connection, SqlUtils.SWITCH_HISTORY_TOTAL_COUNT, "unknown");
+            if (total != null){
+                counter = Integer.parseInt(total.get("total"));
+            }
+        } catch (Exception e) {
+            LOGGER.error("Cannot get switch counter due to the {}", e);
+        }
+        return counter;
     }
 
     /**
