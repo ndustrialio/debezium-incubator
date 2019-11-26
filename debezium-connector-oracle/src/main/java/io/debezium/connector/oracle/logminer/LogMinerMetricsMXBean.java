@@ -31,10 +31,11 @@ public interface LogMinerMetricsMXBean {
     String[] getRedoLogStatus();
 
     /**
-     * fetches history of redo switches for the 7 days todo
-     * @return array of: (redo log file name | time of switch) elements
+     * fetches counter of redo switches for the last day.
+     * If this number is high , like once in 3 minutes,  the troubleshooting on the database level is required.
+     * @return counter
      */
-    String[] getSwitchHistory();
+    int getSwitchCounter();
 
     /**
      * @return number of milliseconds last Log Miner query took
@@ -69,24 +70,50 @@ public interface LogMinerMetricsMXBean {
     int getProcessedCapturedBatchCount();
 
     /**
-     * todo Java doc
-     * @return
+     * @return average time of processing captured batch from Log Miner view
      */
     Long getAverageProcessedCapturedBatchDuration();
 
+    /**
+     * Maximum number of entries in Log Miner view to fetch. This is used to set the diapason of the SCN in mining query.
+     * If difference between "start SCN" and "end SCN" to mine exceeds this limit, end SCN will be set to "start SCN" + maxBatchSize
+     * @return the limit
+     */
     int getMaxBatchSize();
 
+    /**
+     * this gives ability to manipulate maximum number of entries in Log Miner view to fetch.
+     * It has limits to prevent abnormal values
+     * @param size limit
+     */
     void setMaxBatchSize(int size);
 
+    /**
+     * @return number of milliseconds for connector to sleep before fetching another batch from the Log Miner view
+     */
     int getMillisecondToSleepBetweenMiningQuery();
 
+    /**
+     * sets number of milliseconds for connector to sleep before fetching another batch from the Log Miner view
+     * @param milliseconds to sleep
+     */
     void setMillisecondToSleepBetweenMiningQuery(int milliseconds);
 
+    /**
+     * @return number of fetched records from Log Miner view. It serves as a trigger point for connector to sleep.
+     * This helps in reducing database impact by mining query by making it less frequent
+     */
     int getFetchedRecordSizeLimitToFallAsleep();
 
+    /**
+     * sets the limit of fetched records from Log Miner view.
+     * @param size number of records
+     */
     void setFetchedRecordSizeLimitToFallAsleep(int size);
 
+    // not used for now
     boolean getCTAS();
 
+    // not used for now
     void setCTAS(boolean ctas);
 }
