@@ -193,16 +193,15 @@ public class LogMinerHelper {
      * @return counter
      */
     private static int getSwitchCount(Connection connection) {
-        int counter = -1;
         try {
             Map<String, String> total = getMap(connection, SqlUtils.SWITCH_HISTORY_TOTAL_COUNT, "unknown");
-            if (total != null){
-                counter = Integer.parseInt(total.get("total"));
+            if (total != null && total.get("total") != null){
+                return Integer.parseInt(total.get("total"));
             }
         } catch (Exception e) {
             LOGGER.error("Cannot get switch counter due to the {}", e);
         }
-        return counter;
+        return 0;
     }
 
     /**

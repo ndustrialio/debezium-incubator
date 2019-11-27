@@ -34,7 +34,7 @@ public class SqlUtils {
             "            ORDER BY 2";
 
     static final String REDO_LOGS_STATUS = "SELECT F.MEMBER, R.STATUS FROM V$LOGFILE F, V$LOG R WHERE F.GROUP# = R.GROUP# ORDER BY 2";
-    static final String SWITCH_HISTORY_TOTAL_COUNT = "select count(1) as \"total\" from v$archived_log where first_time > trunc(sysdate)\n" +
+    static final String SWITCH_HISTORY_TOTAL_COUNT = "select 'total', count(1) from v$archived_log where first_time > trunc(sysdate)\n" +
             "and dest_id = (select dest_id from V$ARCHIVE_DEST_STATUS where status='VALID' and type='LOCAL')";
     static final String CURRENT_REDO_LOG_NAME = "select f.member from v$log log, v$logfile f  where log.group#=f.group# and log.status='CURRENT'";
     private static final Logger LOGGER = LoggerFactory.getLogger(SqlUtils.class);
