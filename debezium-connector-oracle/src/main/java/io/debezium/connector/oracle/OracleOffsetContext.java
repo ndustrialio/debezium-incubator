@@ -197,9 +197,11 @@ public class OracleOffsetContext implements OffsetContext {
     public static class Loader implements OffsetContext.Loader {
 
         private final OracleConnectorConfig connectorConfig;
+        private final OracleConnectorConfig.ConnectorAdapter adapter;
 
-        public Loader(OracleConnectorConfig connectorConfig) {
+        public Loader(OracleConnectorConfig connectorConfig, OracleConnectorConfig.ConnectorAdapter adapter) {
             this.connectorConfig = connectorConfig;
+            this.adapter = adapter;
         }
 
         @Override
@@ -209,12 +211,18 @@ public class OracleOffsetContext implements OffsetContext {
 
         @Override
         public OffsetContext load(Map<String, ?> offset) {
-            LcrPosition lcrPosition = LcrPosition.valueOf((String) offset.get(SourceInfo.LCR_POSITION_KEY));
-            Long scn = lcrPosition != null ? lcrPosition.getScn() : (Long) offset.get(SourceInfo.SCN_KEY);
             boolean snapshot = Boolean.TRUE.equals(offset.get(SourceInfo.SNAPSHOT_KEY));
             boolean snapshotCompleted = Boolean.TRUE.equals(offset.get(SNAPSHOT_COMPLETED_KEY));
+            Long scn;
+            if (adapter == OracleConnectorConfig.ConnectorAdapter.LOG_MINER){
+                scn = (Long) offset.get(SourceInfo.SCN_KEY);
+                return new OracleOffsetContext(connectorConfig, scn, null, snapshot, snapshotCompleted);
+            } else {
+                LcrPosition lcrPosition = LcrPosition.valueOf((String) offset.get(SourceInfo.LCR_POSITION_KEY));
+                scn = lcrPosition != null ? lcrPosition.getScn() : (Long) offset.get(SourceInfo.SCN_KEY);
+                return new OracleOffsetContext(connectorConfig, scn, lcrPosition, snapshot, snapshotCompleted);
+            }
 
-            return new OracleOffsetContext(connectorConfig, scn, lcrPosition, snapshot, snapshotCompleted);
         }
     }
 }
