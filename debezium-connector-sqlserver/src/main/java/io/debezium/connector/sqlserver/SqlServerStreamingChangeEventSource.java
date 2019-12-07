@@ -5,25 +5,6 @@
  */
 package io.debezium.connector.sqlserver;
 
-import java.net.SocketException;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.PriorityQueue;
-import java.util.Queue;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import io.debezium.pipeline.ErrorHandler;
 import io.debezium.pipeline.EventDispatcher;
 import io.debezium.pipeline.source.spi.StreamingChangeEventSource;
@@ -31,6 +12,18 @@ import io.debezium.relational.TableId;
 import io.debezium.schema.SchemaChangeEvent.SchemaChangeEventType;
 import io.debezium.util.Clock;
 import io.debezium.util.Metronome;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.net.SocketException;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * <p>A {@link StreamingChangeEventSource} based on SQL Server change data capture functionality.
@@ -246,6 +239,11 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                         dataConnection.rollback();
                     } catch (SQLException e) {
                         tablesSlot.set(processErrorFromChangeTableQuery(e, tablesSlot.get()));
+                        LOGGER.warn("Exception while processing table " + tablesSlot.get(), e);
+                        dataConnection.close();
+                        dataConnection.connection(false);
+                        metadataConnection.close();
+                        metadataConnection.connection(false);
                     }
                 } catch (SQLException e) {
                     if (e.getCause() instanceof SocketException) {
