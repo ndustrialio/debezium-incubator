@@ -20,24 +20,22 @@ import java.util.stream.Collectors;
  */
 public class SqlUtils {
 
+    static final String LOGMNR_CONTENTS_VIEW = "V$LOGMNR_CONTENTS";
+    static final String LOGMNR_CONTENTS_TABLE = "LOGMNR_CONTENTS";
+
     static final String BUILD_DICTIONARY = "BEGIN DBMS_LOGMNR_D.BUILD (options => DBMS_LOGMNR_D.STORE_IN_REDO_LOGS); END;";
     static final String CURRENT_SCN = "SELECT CURRENT_SCN FROM V$DATABASE";
     static final String END_LOGMNR = "BEGIN SYS.DBMS_LOGMNR.END_LOGMNR(); END;";
     static final String OLDEST_FIRST_CHANGE = "SELECT MIN(FIRST_CHANGE#) FROM V$LOG";
-    static final String ALL_ONLINE_LOGS_NAMES_FOR_OFFSET = "SELECT MIN(F.MEMBER) AS FILE_NAME, L.NEXT_CHANGE# AS NEXT_CHANGE " +
+    static final String ALL_ONLINE_LOGS = "SELECT MIN(F.MEMBER) AS FILE_NAME, L.NEXT_CHANGE# AS NEXT_CHANGE " +
             "            FROM V$LOG L, V$LOGFILE F " +
             "            WHERE F.GROUP# = L.GROUP# " +
             "            GROUP BY L.NEXT_CHANGE#" +
             "            ORDER BY 2";
 
     static final String REDO_LOGS_STATUS = "SELECT F.MEMBER, R.STATUS FROM V$LOGFILE F, V$LOG R WHERE F.GROUP# = R.GROUP# ORDER BY 2";
-    static final String REDO_LOG_FILES_STATUS = "SELECT MEMBER, STATUS FROM V$LOGFILE ORDER BY 2";
-    static final String REDO_LOGS_SEQUENCE = "SELECT F.MEMBER, R.SEQUENCE# FROM V$LOGFILE F, V$LOG R WHERE F.GROUP# = R.GROUP# order by 2";
-    static final String SWITCH_HISTORY = "SELECT F.MEMBER, SUBSTR(TO_CHAR(H.FIRST_TIME, 'HH24:MI'), 1, 15) SWITCH_TIME" +
-            "   FROM V$LOG_HISTORY H, V$LOG L, V$LOGFILE F " +
-            "   WHERE H.SEQUENCE# = L.SEQUENCE#" +
-            "   AND F.GROUP#=L.GROUP#" +
-            "   AND L.FIRST_TIME > TRUNC(SYSDATE) ORDER BY H.SEQUENCE# ASC";
+    static final String SWITCH_HISTORY_TOTAL_COUNT = "select 'total', count(1) from v$archived_log where first_time > trunc(sysdate)\n" +
+            "and dest_id = (select dest_id from V$ARCHIVE_DEST_STATUS where status='VALID' and type='LOCAL')";
     static final String CURRENT_REDO_LOG_NAME = "select f.member from v$log log, v$logfile f  where log.group#=f.group# and log.status='CURRENT'";
     private static final Logger LOGGER = LoggerFactory.getLogger(SqlUtils.class);
 
@@ -57,26 +55,24 @@ public class SqlUtils {
      * @param startScn mine from
      * @param endScn mine till
      * @param strategy Log Mining strategy
-     * @return statement
+     * @return statement todo: handle corruption. STATUS (Double) — A value of 0 indicates it is executable
      */
     static String getStartLogMinerStatement(Long startScn, Long endScn, OracleConnectorConfig.LogMiningStrategy strategy, boolean isContinuousMining) {
         String miningStrategy;
-        String ddlTracking = "";
         if (strategy.equals(OracleConnectorConfig.LogMiningStrategy.CATALOG_IN_REDO)) {
-            miningStrategy = "DBMS_LOGMNR.DICT_FROM_REDO_LOGS";
-            ddlTracking =  " DBMS_LOGMNR.DDL_DICT_TRACKING + ";
+            miningStrategy = "DBMS_LOGMNR.DICT_FROM_REDO_LOGS + DBMS_LOGMNR.DDL_DICT_TRACKING ";
         } else {
-            miningStrategy = "DBMS_LOGMNR.DICT_FROM_ONLINE_CATALOG";
+            miningStrategy = "DBMS_LOGMNR.DICT_FROM_ONLINE_CATALOG ";
         }
         if (isContinuousMining) {
             miningStrategy += " + DBMS_LOGMNR.CONTINUOUS_MINE ";
-            ddlTracking = "";
         }
         return "BEGIN sys.dbms_logmnr.start_logmnr(" +
                 "startScn => '" + startScn + "', " +
                 "endScn => '" + endScn + "', " +
-                "OPTIONS => " + miningStrategy + " + " + ddlTracking +
-                "DBMS_LOGMNR.NO_ROWID_IN_STMT);" +
+                "OPTIONS => " + miningStrategy +
+                " + DBMS_LOGMNR.NO_ROWID_IN_STMT);" +
+//                ");" +
                 "END;";
     }
 
@@ -85,55 +81,66 @@ public class SqlUtils {
      *
      * SCN - The SCN at which a change was made
      * COMMIT_SCN - The SCN at which a change was committed
-     * OPERATION - User level SQL operation that made the change.
      * USERNAME - Name of the user who executed the transaction
      * SQL_REDO Reconstructed SQL statement that is equivalent to the original SQL statement that made the change
-     * SEG_TYPE - Segment type. Possible values are:
-     * STATUS - A value of 0 indicates that the reconstructed SQL statements as shown
-     *          in the SQL_REDO and SQL_UNDO columns are valid executable SQL statements
      * OPERATION_CODE - Number of the operation code.
      * TABLE_NAME - Name of the modified table
      * TIMESTAMP - Timestamp when the database change was made
-     * COMMIT_TIMESTAMP - Timestamp when the transaction committed
      *
      * @param schemaName user name
      * @param logMinerUser log mining session user name
      * @param schema schema
+     * @param miningViewName table/view to get mining info from. TODO The table option is used to prototype CTAS approach.
+     *                       Currently it is not properly tested, so we hide this configuration option for now
      * @return the query
      */
 
-    public static String queryLogMinerContents(String schemaName, String logMinerUser, OracleDatabaseSchema schema)  {
+    public static String queryLogMinerContents(String schemaName, String logMinerUser, OracleDatabaseSchema schema, String miningViewName)  {
         List<String> whiteListTableNames = schema.tableIds().stream().map(TableId::table).collect(Collectors.toList());
 
-        return "SELECT SCN, COMMIT_SCN, OPERATION, USERNAME, SRC_CON_NAME, SQL_REDO, SEG_TYPE, " +
-                        " STATUS, OPERATION_CODE, TABLE_NAME, TIMESTAMP, COMMIT_TIMESTAMP, XID, CSF, " +
-                " SEG_OWNER, SEG_NAME, SEQUENCE# " +
-                        " FROM V$LOGMNR_CONTENTS " +
-                        " WHERE " +
-                        // currently we do not capture changes from other schemas
-                        " USERNAME = '"+ schemaName.toUpperCase() +"'" +
-                        " AND OPERATION_CODE in (1,2,3,5) " +// 5 - DDL
-                        " AND SEG_OWNER = '"+ schemaName.toUpperCase() +"' " +
-                        buildTableInPredicate(whiteListTableNames) +
+        String sorting = "";
+        if (miningViewName.equalsIgnoreCase("logmnr_contents")){
+            sorting = " order by scn, rs_id, csf desc";
+        }
+        return "SELECT SCN, SQL_REDO, OPERATION_CODE, TIMESTAMP, XID, CSF, TABLE_NAME, SEG_OWNER  " +
+                " FROM " + miningViewName +
+                " WHERE " +
+                // currently we do not capture changes from other schemas
+                " USERNAME = '"+ schemaName.toUpperCase() +"'" +
+                " AND OPERATION_CODE in (1,2,3,5) " +// 5 - DDL
+                " AND SEG_OWNER = '"+ schemaName.toUpperCase() +"' " +
+                buildTableInPredicate(whiteListTableNames) +
 //                        " (commit_scn >= ? " +
                 " AND SCN > ? AND SCN <= ? " +
                 //" OR (OPERATION_CODE IN (7,36) AND USERNAME ='"+schemaName.toUpperCase()+"')";
-        " OR (OPERATION_CODE IN (7,36) AND USERNAME NOT IN ('SYS','SYSTEM','"+logMinerUser.toUpperCase()+"'))"; //todo username = schemaName?
+                " OR (OPERATION_CODE IN (7,36) AND USERNAME NOT IN ('SYS','SYSTEM','"+logMinerUser.toUpperCase()+"'))" + sorting; //todo username = schemaName?
     }
 
-    /**
-     * This returns statement to query log miner view, pre-built for archived log files
-     * @param schemaName user name
-     * @return query
-     */
-    static String queryLogMinerArchivedContents(String schemaName)  {
-        return "SELECT SCN, COMMIT_SCN, OPERATION, USERNAME, SRC_CON_NAME, SQL_REDO, SEG_TYPE, " +
-                        "STATUS, OPERATION_CODE, TABLE_NAME, TIMESTAMP, COMMIT_TIMESTAMP, XID, XIDSQN " +
-                        "FROM v$logmnr_contents " +
-                        "WHERE " +
-                        "username = '"+ schemaName.toUpperCase() +"' " +
-//                        " AND OPERATION_CODE in (1,2,3,5,7, 36) " +// 5 - DDL
-                        "AND seg_owner = '"+ schemaName.toUpperCase() +"'";
+    public static String queryLogMinerContentsTemp(String schemaName, String logMinerUser, OracleDatabaseSchema schema, String miningViewName)  {
+        List<String> whiteListTableNames = schema.tableIds().stream().map(TableId::table).collect(Collectors.toList());
+
+        String sorting = "";
+        if (miningViewName.equalsIgnoreCase("logmnr_contents")){
+            sorting = " order by scn, rs_id, csf desc";
+        }
+        return "SELECT * " +
+                " FROM " + miningViewName +
+                " WHERE " +
+                // currently we do not capture changes from other schemas
+                " USERNAME = '"+ schemaName.toUpperCase() +"'" +
+                " AND OPERATION_CODE in (1,2,3,5) " +// 5 - DDL
+                " AND SEG_OWNER = '"+ schemaName.toUpperCase() +"' " +
+                buildTableInPredicate(whiteListTableNames) +
+//                        " (commit_scn >= ? " +
+                " AND SCN > ? AND SCN <= ? " +
+                //" OR (OPERATION_CODE IN (7,36) AND USERNAME ='"+schemaName.toUpperCase()+"')";
+                " OR (OPERATION_CODE IN (7,36) AND USERNAME NOT IN ('SYS','SYSTEM','"+logMinerUser.toUpperCase()+"'))" + sorting; //todo username = schemaName?
+    }
+
+    // todo
+    public static String queryCreateTempTable(String schemaName, String logMinerUser, OracleDatabaseSchema schema) {
+        return "CREATE TABLE PARALLEL NOLOGGING logmnr_contents AS " +
+        queryLogMinerContents(schemaName, logMinerUser, schema, "V$LOGMNR_CONTENTS");
     }
 
     /**

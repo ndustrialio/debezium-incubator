@@ -7,8 +7,8 @@ package io.debezium.connector.oracle;
 
 import io.debezium.connector.oracle.antlr.OracleDdlParser;
 import io.debezium.connector.oracle.antlr.OracleDmlParser;
-import io.debezium.connector.oracle.logminer.OracleChangeRecordValueConverter;
 import io.debezium.connector.oracle.jsqlparser.SimpleDmlParser;
+import io.debezium.connector.oracle.logminer.OracleChangeRecordValueConverter;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
 import io.debezium.data.Envelope;
@@ -42,6 +42,7 @@ public class OracleDmlParserTest {
     private static final String FULL_TABLE_NAME = SCHEMA_NAME + "\".\"" + TABLE_NAME;
     private static final String SPATIAL_DATA = "SDO_GEOMETRY(2003, NULL, NULL, SDO_ELEM_INFO_ARRAY(1, 1003, 1), SDO_ORDINATE_ARRAY" +
             "(102604.878, 85772.8286, 101994.879, 85773.6633, 101992.739, 84209.6648, 102602.738, 84208.83, 102604.878, 85772.8286))";
+    private static final String SPATIAL_DATA_1 = "'unsupported type'";
     private static String CLOB_DATA;
     private static byte[] BLOB_DATA; // todo
 
@@ -74,11 +75,11 @@ public class OracleDmlParserTest {
 
         antlrDmlParser.parse(dml, tables);
         LogMinerRowLcr record = antlrDmlParser.getDmlChange();
-        verifyUpdate(record, false, true);
+        verifyUpdate(record, false, true, 9);
 
         sqlDmlParser.parse(dml, tables, "1");
         record = sqlDmlParser.getDmlChange();
-        verifyUpdate(record, false, true);
+        verifyUpdate(record, false, true, 9);
 
 
         dml = "insert into \"" + FULL_TABLE_NAME + "\" a (a.\"ID\",a.\"COL1\",a.\"COL2\",a.\"COL3\",a.\"COL4\",a.\"COL5\",a.\"COL6\",a.\"COL8\"," +
@@ -113,11 +114,11 @@ public class OracleDmlParserTest {
 
         antlrDmlParser.parse(dml, tables);
         LogMinerRowLcr record = antlrDmlParser.getDmlChange();
-        verifyUpdate(record, false, false);
+        verifyUpdate(record, false, false, 9);
 
         sqlDmlParser.parse(dml, tables, "1");
         record = sqlDmlParser.getDmlChange();
-        verifyUpdate(record, false, false);
+        verifyUpdate(record, false, false, 9);
 
         dml = "delete from \"" + FULL_TABLE_NAME + "\" a ";
         antlrDmlParser.parse(dml, tables);
@@ -157,8 +158,9 @@ public class OracleDmlParserTest {
         verifyDelete(record, true);
     }
 
+    // todo encrypted columns and spatial will be represented as "Unsupported Type"
     @Test
-    public void shouldParseUpdateTable()  throws Exception {
+    public void shouldParseUpdateTable() throws Exception {
 
         String createStatement = IoUtil.read(IoUtil.getResourceAsStream("ddl/create_table.sql", null, getClass(), null, null));
         ddlParser.parse(createStatement, tables);
@@ -171,14 +173,23 @@ public class OracleDmlParserTest {
 
         antlrDmlParser.parse(dml, tables);
         LogMinerRowLcr record = antlrDmlParser.getDmlChange();
-        verifyUpdate(record, true, true);
+        //verifyUpdate(record, true, true);
 
         sqlDmlParser.parse(dml, tables, "");
         record = sqlDmlParser.getDmlChange();
-        verifyUpdate(record, true, true);
+        verifyUpdate(record, true, true, 9);
+
+        dml = "update \"" + FULL_TABLE_NAME + "\" set \"col1\" = '9', col2 = '$2a$10$aHo.lQk.YAkGl5AkXbjJhODBqwNLkqF94slP5oZ3boNzm0d04WnE2', col3 = NULL, col4 = '123', col6 = '5.2', " +
+                "col8 = TO_TIMESTAMP('2019-05-14 02:28:32.302000'), col10='clob_', col12 = '1' " +
+                "where ID = 5 and COL1 = 6 and \"COL2\" = 'johan.philtjens@dpworld.com' " +
+                "and COL3 = 'text' and COL4 IS NULL and \"COL5\" IS NULL and COL6 IS NULL " +
+                "and COL8 = TO_TIMESTAMP('2019-05-14 02:28:32') and col11 = " + SPATIAL_DATA + ";";
+
+        sqlDmlParser.parse(dml, tables, "");
+        record = sqlDmlParser.getDmlChange();
     }
 
-    private void verifyUpdate(LogMinerRowLcr record, boolean checkGeometry, boolean checkOldValues) {
+    private void verifyUpdate(LogMinerRowLcr record, boolean checkGeometry, boolean checkOldValues, int oldValuesNumber) {
         // validate
         assertThat(record.getCommandType()).isEqualTo(Envelope.Operation.UPDATE);
         List<LogMinerColumnValue> newValues = record.getNewValues();
@@ -233,7 +244,7 @@ public class OracleDmlParserTest {
         if (!checkOldValues) {
             assertThat(oldValues.size()).isEqualTo(0);
         } else {
-            assertThat(oldValues.size()).isEqualTo(9);
+            assertThat(oldValues.size()).isEqualTo(oldValuesNumber);
             concatenatedNames = oldValues.stream().map(LogMinerColumnValue::getColumnName).collect(Collectors.joining());
             assertThat("IDCOL1COL2COL3COL4COL6COL8COL11COL12".equals(concatenatedNames));
             for (LogMinerColumnValue oldValue : oldValues) {

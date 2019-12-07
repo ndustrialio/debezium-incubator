@@ -22,57 +22,98 @@ public interface LogMinerMetricsMXBean {
      *
      * @return full path or NULL if an exception occurs.
      */
-    String getCurrentRedoLogFile();
+    String getCurrentRedoLogFileName();
 
     /**
      * Exposes states of redo logs: current, active, inactive, unused ...
      * @return array of: (redo log name | status) elements
      */
-    String[] getRedoLogStatuses();
+    String[] getRedoLogStatus();
 
     /**
-     * Exposes states of redo logs files: valid, invalid
-     * @return array of: (redo log file name | status) elements
+     * fetches counter of redo switches for the last day.
+     * If this number is high , like once in 3 minutes,  the troubleshooting on the database level is required.
+     * @return counter
      */
-    String[] getRedoLogFileState();
+    int getSwitchCounter();
 
     /**
-     * fetches history of redo switches for the last hour
-     * @return array of: (redo log file name | time of switch) elements
+     * @return number of milliseconds last Log Miner query took
      */
-    String[] getSwitchHistory();
+    Long getLastLogMinerQueryDuration();
 
     /**
-     * todo Java doc
-     * @return
+     * @return number of captured DML since the connector is up
      */
-    String[] getSequences();
+    int getCapturedDmlCount();
 
-    int getTodaySwitchCount();
+    /**
+     * @return number of Log Miner view queries since the connector is up
+     */
+    int getLogMinerQueryCount();
 
-    Long getLastFetchingQueryDuration();
+    /**
+     * @return average duration of Log Miner view query
+     */
+    Long getAverageLogMinerQueryDuration();
 
-    int getNumberOfFetchedDml();
+    /**
+     * Log Miner view query returns number of captured DML , Commit and Rollback. This is what we call a batch.
+     * @return duration of the last batch processing, which includes parsing and dispatching
+     */
+    Long getLastProcessedCapturedBatchDuration();
 
-    int getExecutedFetchingQueriesCount();
+    /**
+     * Log Miner view query returns number of captured DML , Commit and Rollback. This is what we call a batch.
+     * @return number of all processed batches , which includes parsing and dispatching
+     */
+    int getProcessedCapturedBatchCount();
 
-    Long getAverageFetchingQueryDuration();
+    /**
+     * @return average time of processing captured batch from Log Miner view
+     */
+    Long getAverageProcessedCapturedBatchDuration();
 
-    Long getDurationOfLastProcessedBatch();
+    /**
+     * Maximum number of entries in Log Miner view to fetch. This is used to set the diapason of the SCN in mining query.
+     * If difference between "start SCN" and "end SCN" to mine exceeds this limit, end SCN will be set to "start SCN" + maxBatchSize
+     * @return the limit
+     */
+    int getMaxBatchSize();
 
-    int getProcessedBatchCount();
+    /**
+     * this gives ability to manipulate maximum number of entries in Log Miner view to fetch.
+     * It has limits to prevent abnormal values
+     * @param size limit
+     */
+    void setMaxBatchSize(int size);
 
-    Long getAverageProcessedBatchDuration();
+    /**
+     * @return number of milliseconds for connector to sleep before fetching another batch from the Log Miner view
+     */
+    int getMillisecondToSleepBetweenMiningQuery();
 
-    int getMaxMiningBatchSize();
+    /**
+     * sets number of milliseconds for connector to sleep before fetching another batch from the Log Miner view
+     * @param milliseconds to sleep
+     */
+    void setMillisecondToSleepBetweenMiningQuery(int milliseconds);
 
-    void  setMaxMiningBatchSize(int size);
+    /**
+     * @return number of fetched records from Log Miner view. It serves as a trigger point for connector to sleep.
+     * This helps in reducing database impact by mining query by making it less frequent
+     */
+    int getFetchedRecordSizeLimitToFallAsleep();
 
-    int getMillisecondsToSleepBetweenMiningQuery();
+    /**
+     * sets the limit of fetched records from Log Miner view.
+     * @param size number of records
+     */
+    void setFetchedRecordSizeLimitToFallAsleep(int size);
 
-    void setMillisecondsToSleepBetweenMiningQuery(int milliseconds);
+    // not used for now
+    boolean getCTAS();
 
-    int getFetchedRecordsSizeLimitToFallAsleep();
-
-    void setFetchedRecordsSizeLimitToFallAsleep(int size);
+    // not used for now
+    void setCTAS(boolean ctas);
 }

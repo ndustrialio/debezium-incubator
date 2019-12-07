@@ -11,6 +11,8 @@ import io.debezium.metrics.Metrics;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -20,34 +22,52 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 @ThreadSafe
 public class TransactionalBufferMetrics extends Metrics implements TransactionalBufferMetricsMXBean {
-    private AtomicLong smallestScn = new AtomicLong();
+    private AtomicLong oldestScn = new AtomicLong();
     private AtomicReference<Duration> lagFromTheSource = new AtomicReference<>();
     private AtomicInteger activeTransactions = new AtomicInteger();
     private AtomicLong rolledBackTransactions = new AtomicLong();
     private AtomicLong committedTransactions = new AtomicLong();
-    private AtomicLong dmlCounter = new AtomicLong();
+    private AtomicLong capturedDmlCounter = new AtomicLong();
+    private AtomicLong committedDmlCounter = new AtomicLong();
+    private AtomicReference<Duration> maxLagFromTheSource = new AtomicReference<>();
+    private AtomicReference<Duration> minLagFromTheSource = new AtomicReference<>();
+    private AtomicReference<Duration> totalLagsFromTheSource = new AtomicReference<>();
+    private AtomicReference<Set<String>> abandonedTransactionIds = new AtomicReference<>();
     private Instant startTime;
     private static long MILLIS_PER_SECOND = 1000L;
-
 
     TransactionalBufferMetrics(CdcSourceTaskContext taskContext) {
         super(taskContext, "log-miner-transactional-buffer");
         startTime = Instant.now();
-        smallestScn.set(-1);
+        oldestScn.set(-1);
         lagFromTheSource.set(Duration.ZERO);
+        maxLagFromTheSource.set(Duration.ZERO);
+        minLagFromTheSource.set(Duration.ZERO);
+        totalLagsFromTheSource.set(Duration.ZERO);
         activeTransactions.set(0);
         rolledBackTransactions.set(0);
         committedTransactions.set(0);
-        dmlCounter.set(0);
+        capturedDmlCounter.set(0);
+        committedDmlCounter.set(0);
+        totalLagsFromTheSource.set(Duration.ZERO);
+        abandonedTransactionIds.set(new HashSet<>());
     }
 
-    void setSmallestScn(Long scn){
-        smallestScn.set(scn);
+    // setters
+    void setOldestScn(Long scn){
+        oldestScn.set(scn);
     }
 
     void setLagFromTheSource(Instant changeTime){
         if (changeTime != null) {
             lagFromTheSource.set(Duration.between(changeTime, Instant.now()));
+            if (maxLagFromTheSource.get().toMillis() < lagFromTheSource.get().toMillis()) {
+                maxLagFromTheSource.set(lagFromTheSource.get());
+            }
+            if (minLagFromTheSource.get().toMillis() > lagFromTheSource.get().toMillis()) {
+                minLagFromTheSource.set(lagFromTheSource.get());
+            }
+            totalLagsFromTheSource.set(totalLagsFromTheSource.get().plus(lagFromTheSource.get()));
         }
     }
 
@@ -65,13 +85,28 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         committedTransactions.incrementAndGet();
     }
 
-    void incrementDmlCounter() {
-        dmlCounter.incrementAndGet();
+    void incrementCapturedDmlCounter() {
+        capturedDmlCounter.incrementAndGet();
     }
 
+    void decrementCapturedDmlCounter(int counter) {
+        capturedDmlCounter.getAndAdd(-counter);
+    }
+
+    void incrementCommittedDmlCounter(int counter) {
+        committedDmlCounter.getAndAdd(counter);
+    }
+
+    void addAbandonedTransactionId(String transactionId){
+        if (transactionId != null) {
+            abandonedTransactionIds.get().add(transactionId);
+        }
+    }
+
+    // implemented getters
     @Override
     public Long getOldestScn() {
-        return smallestScn.get();
+        return oldestScn.get();
     }
 
     @Override
@@ -95,25 +130,49 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     }
 
     @Override
-    public long getDmlThroughput() {
-        return dmlCounter.get() * MILLIS_PER_SECOND / Duration.between(startTime, Instant.now()).toMillis();
+    public long getCapturedDmlThroughput() {
+        return committedDmlCounter.get() * MILLIS_PER_SECOND / Duration.between(startTime, Instant.now()).toMillis();
     }
 
     @Override
     public long getLagFromSource() {
-        Duration lag =  lagFromTheSource.get();
-        return lag != null ? lag.toMillis() : -1;
+        return lagFromTheSource.get().toMillis();
+    }
+
+    @Override
+    public long getMaxLagFromSource() {
+        return maxLagFromTheSource.get().toMillis();
+    }
+
+    @Override
+    public long getMinLagFromSource() {
+        return minLagFromTheSource.get().toMillis();
+    }
+
+    @Override
+    public long getAverageLagFromSource() {
+        return totalLagsFromTheSource.get().toMillis()/capturedDmlCounter.get() == 0 ? 1 : capturedDmlCounter.get();
+    }
+
+    @Override
+    public Set<String> getAbandonedTransactionIds() {
+        return abandonedTransactionIds.get();
     }
 
     @Override
     public String toString() {
         return "TransactionalBufferMetrics{" +
-                "smallestScn=" + smallestScn.get() +
+                "oldestScn=" + oldestScn.get() +
                 ", lagFromTheSource=" + lagFromTheSource.get() +
                 ", activeTransactions=" + activeTransactions.get() +
                 ", rolledBackTransactions=" + rolledBackTransactions.get() +
                 ", committedTransactions=" + committedTransactions.get() +
-                ", dmlCounter=" + dmlCounter.get() +
+                ", capturedDmlCounter=" + capturedDmlCounter.get() +
+                ", committedDmlCounter=" + committedDmlCounter.get() +
+                ", maxLagFromTheSource=" + maxLagFromTheSource.get() +
+                ", minLagFromTheSource=" + minLagFromTheSource.get() +
+                ", totalLagsFromTheSource=" + totalLagsFromTheSource.get() +
+                ", abandonedTransactionIds=" + abandonedTransactionIds.get() +
                 '}';
     }
 }
