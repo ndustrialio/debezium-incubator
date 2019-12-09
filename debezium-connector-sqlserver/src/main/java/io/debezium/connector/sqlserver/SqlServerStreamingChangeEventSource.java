@@ -235,9 +235,9 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                             }
                         });
                         lastProcessedPosition = TxLogPosition.valueOf(currentMaxLsn);
+                    } catch (SQLException e) {
                         // Terminate the transaction otherwise CDC could not be disabled for tables
                         dataConnection.rollback();
-                    } catch (SQLException e) {
                         tablesSlot.set(processErrorFromChangeTableQuery(e, tablesSlot.get()));
                         LOGGER.warn("Exception while processing table " + tablesSlot.get(), e);
                         dataConnection.close();
