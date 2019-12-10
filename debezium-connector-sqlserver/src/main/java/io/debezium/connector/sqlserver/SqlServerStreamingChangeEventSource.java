@@ -247,6 +247,7 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                     } catch (SQLException e) {
                         tablesSlot.set(processErrorFromChangeTableQuery(e, tablesSlot.get()));
                         LOGGER.warn("Exception while processing table " + tablesSlot.get(), e);
+                        dataConnection.rollback();
                         dataConnection.close();
                         dataConnection.connection(false);
                         metadataConnection.close();
