@@ -244,14 +244,17 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                         // Terminate the transaction otherwise CDC could not be disabled for tables
                         dataConnection.rollback();
                     } catch (SQLException e) {
-                        // Terminate the transaction otherwise CDC could not be disabled for tables
-                        dataConnection.rollback();
                         tablesSlot.set(processErrorFromChangeTableQuery(e, tablesSlot.get()));
-                        LOGGER.warn("Exception while processing table " + tablesSlot.get(), e);
-                        /*dataConnection.close();
-                        dataConnection.connection(false);
-                        metadataConnection.close();
-                        metadataConnection.connection(false);*/
+                        if (e.getCause() instanceof  SocketException) {
+                            LOGGER.warn("Exception while processing table " + tablesSlot.get(), e);
+                            dataConnection.close();
+                            dataConnection.connection(false);
+                            metadataConnection.close();
+                            metadataConnection.connection(false);
+                        } else {
+                            // Terminate the transaction otherwise CDC could not be disabled for tables
+                            dataConnection.rollback();
+                        }
                     }
                 } catch (SQLException e) {
                     if (e.getCause() instanceof SocketException) {
