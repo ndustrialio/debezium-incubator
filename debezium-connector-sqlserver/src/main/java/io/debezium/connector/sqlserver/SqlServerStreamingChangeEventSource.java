@@ -235,15 +235,17 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                             }
                         });
                         lastProcessedPosition = TxLogPosition.valueOf(currentMaxLsn);
+                        // Terminate the transaction otherwise CDC could not be disabled for tables
+                        dataConnection.rollback();
                     } catch (SQLException e) {
                         // Terminate the transaction otherwise CDC could not be disabled for tables
                         dataConnection.rollback();
                         tablesSlot.set(processErrorFromChangeTableQuery(e, tablesSlot.get()));
                         LOGGER.warn("Exception while processing table " + tablesSlot.get(), e);
-                        dataConnection.close();
+                        /*dataConnection.close();
                         dataConnection.connection(false);
                         metadataConnection.close();
-                        metadataConnection.connection(false);
+                        metadataConnection.connection(false);*/
                     }
                 } catch (SQLException e) {
                     if (e.getCause() instanceof SocketException) {
