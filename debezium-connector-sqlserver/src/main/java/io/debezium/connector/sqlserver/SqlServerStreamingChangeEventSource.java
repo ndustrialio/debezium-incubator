@@ -19,7 +19,13 @@ import java.net.SocketException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -235,15 +241,20 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                             }
                         });
                         lastProcessedPosition = TxLogPosition.valueOf(currentMaxLsn);
-                    } catch (SQLException e) {
                         // Terminate the transaction otherwise CDC could not be disabled for tables
                         dataConnection.rollback();
+                    } catch (SQLException e) {
                         tablesSlot.set(processErrorFromChangeTableQuery(e, tablesSlot.get()));
-                        LOGGER.warn("Exception while processing table " + tablesSlot.get(), e);
-                        dataConnection.close();
-                        dataConnection.connection(false);
-                        metadataConnection.close();
-                        metadataConnection.connection(false);
+                        if (e.getCause() instanceof  SocketException) {
+                            LOGGER.warn("Exception while processing table " + tablesSlot.get(), e);
+                            dataConnection.close();
+                            dataConnection.connection(false);
+                            metadataConnection.close();
+                            metadataConnection.connection(false);
+                        } else {
+                            // Terminate the transaction otherwise CDC could not be disabled for tables
+                            dataConnection.rollback();
+                        }
                     }
                 } catch (SQLException e) {
                     if (e.getCause() instanceof SocketException) {
