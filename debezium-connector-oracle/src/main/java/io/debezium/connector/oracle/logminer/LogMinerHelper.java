@@ -41,7 +41,7 @@ public class LogMinerHelper {
      * With this option the lag between source database and dispatching event fluctuates.
      *
      * @param connection connection to the database as log miner user (connection to the container)
-     * @throws SQLException fatal exception, cannot continue further
+     * @throws SQLException any exception
      */
     static void buildDataDictionary(Connection connection) throws SQLException {
         executeCallableStatement(connection, SqlUtils.BUILD_DICTIONARY);
@@ -52,7 +52,7 @@ public class LogMinerHelper {
      *
      * @param connection container level database connection
      * @return current SCN
-     * @throws SQLException fatal exception, cannot continue further
+     * @throws SQLException if anything unexpected happens
      */
     public static long getCurrentScn(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement();
@@ -77,7 +77,7 @@ public class LogMinerHelper {
      * @param metrics MBean accessible metrics
      * @param lastProcessesScn offset SCN
      * @return next SCN to mine to
-     * @throws SQLException fatal exception, cannot continue further
+     * @throws SQLException if anything unexpected happens
      */
     static long getNextScn(Connection connection, long lastProcessesScn, LogMinerMetrics metrics) throws SQLException {
         long currentScn = getCurrentScn(connection);
@@ -116,7 +116,7 @@ public class LogMinerHelper {
      * @param endScn     the SCN to mine to
      * @param strategy this is about dictionary location
      * @param isContinuousMining works < 19 version only
-     * @throws SQLException fatal exception, cannot continue further
+     * @throws SQLException if anything unexpected happens
      */
     static void startOnlineMining(Connection connection, Long startScn, Long endScn,
                                          OracleConnectorConfig.LogMiningStrategy strategy, boolean isContinuousMining) throws SQLException {
@@ -131,7 +131,7 @@ public class LogMinerHelper {
      * @param connection connection to reuse
      * @param metrics MBean accessible metrics
      * @return full redo log file name, including path
-     * @throws SQLException this would be something fatal
+     * @throws SQLException if anything unexpected happens
      */
     static String getCurrentRedoLogFile(Connection connection, LogMinerMetrics metrics) throws SQLException {
         String checkQuery = SqlUtils.CURRENT_REDO_LOG_NAME;
@@ -155,7 +155,7 @@ public class LogMinerHelper {
      *
      * @param connection container level database connection
      * @return oldest SCN from online redo log
-     * @throws SQLException fatal exception, cannot continue further
+     * @throws SQLException if anything unexpected happens
      */
     static long getFirstOnlineLogScn(Connection connection) throws SQLException {
         LOGGER.trace("getting first scn of all online logs");
@@ -210,7 +210,7 @@ public class LogMinerHelper {
      *
      * @param logFileName file to delete from the analysis
      * @param connection  container level database connection
-     * @throws SQLException fatal exception, cannot continue further
+     * @throws SQLException if anything unexpected happens
      */
     private static void removeLogFileFromMining(String logFileName, Connection connection) throws SQLException {
         String removeLogFileFromMining = SqlUtils.getRemoveLogFileFromMiningStatement(logFileName);
@@ -226,7 +226,7 @@ public class LogMinerHelper {
      * @param connection conn
      * @param pdbName pdb name
      * @param tableIds whitelisted tables
-     * @throws SQLException any
+     * @throws SQLException if anything unexpected happens
      */
     static void setSupplementalLoggingForWhitelistedTables(OracleConnection jdbcConnection, Connection connection, String pdbName,
                                                                   Set<TableId> tableIds) throws SQLException {
@@ -288,7 +288,7 @@ public class LogMinerHelper {
      * @param connection connection
      * @param lastProcessedScn current offset
      * @param currentLogFilesForMining list of files we are currently mining
-     * @throws SQLException if any problem
+     * @throws SQLException if anything unexpected happens
      */
     static void setRedoLogFilesForMining(Connection connection, Long lastProcessedScn, List<String> currentLogFilesForMining) throws SQLException {
 
@@ -323,7 +323,7 @@ public class LogMinerHelper {
      * @param connection connection
      * @param lastProcessedScn current offset
      * @return Optional last SCN in a redo log
-     * @throws SQLException if something happens
+     * @throws SQLException if anything unexpected happens
      */
     static Optional<Long> getLastScnFromTheOldestMiningRedo(Connection connection, Long lastProcessedScn) throws SQLException {
         Map<String, String> allOnlineRedoLogFiles = getMap(connection, SqlUtils.ALL_ONLINE_LOGS, "-1");
@@ -336,28 +336,6 @@ public class LogMinerHelper {
             return lastScnInOldestMinedRedo.stream().min(Long::compareTo);
         }
         return Optional.empty();
-    }
-
-    // todo use SQLUtils or delete (CTAS option)
-    static void createTempTable(Connection connection, String schemaName, String logminerUser, Long lastProcessedScn) throws SQLException {
-        String dropTable = "drop table logmnr_contents";
-        String checkIfExists = "select 'TABLE_EXISTS', 1 from dual where exists " +
-                "(select 1 from all_tables where table_name='LOGMNR_CONTENTS' AND lower(OWNER)='" + logminerUser.toLowerCase() + "')";
-
-        String  createTable = " CREATE GLOBAL TEMPORARY TABLE logmnr_contents parallel (degree 4) unrecoverable " +
-                    " AS SELECT * " +
-                    " FROM v$logmnr_contents where seg_owner = '" + schemaName.toUpperCase() + "' AND SCN > " + lastProcessedScn +
-                    " AND OPERATION_CODE in (1,2,3,5) OR (OPERATION_CODE IN (7,36))";
-
-        String createIndex = "CREATE INDEX logmnr_contents_idx1 " +
-                " ON logmnr_contents(operation_code, seg_owner, table_name, scn)";
-
-        Map<String, String> tableExists = getMap(connection, checkIfExists, "");
-        if (tableExists.get("TABLE_EXISTS") != null) {
-            executeCallableStatement(connection, dropTable);
-        }
-        executeCallableStatement(connection, createTable);
-        //executeCallableStatement(connection, createIndex);
     }
 
     // 18446744073709551615 on Ora 19c is the max value of the nextScn in the current redo todo replace all Long with BigDecimal for SCN
