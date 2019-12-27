@@ -18,10 +18,9 @@ import java.util.stream.Collectors;
 /**
  * This utility class contains SQL statements to configure, manage and query Oracle LogMiner
  */
-public class SqlUtils {
+class SqlUtils {
 
     static final String LOGMNR_CONTENTS_VIEW = "V$LOGMNR_CONTENTS";
-    static final String LOGMNR_CONTENTS_TABLE = "LOGMNR_CONTENTS";
 
     static final String BUILD_DICTIONARY = "BEGIN DBMS_LOGMNR_D.BUILD (options => DBMS_LOGMNR_D.STORE_IN_REDO_LOGS); END;";
     static final String CURRENT_SCN = "SELECT CURRENT_SCN FROM V$DATABASE";
@@ -95,7 +94,7 @@ public class SqlUtils {
      * @return the query
      */
 
-    public static String queryLogMinerContents(String schemaName, String logMinerUser, OracleDatabaseSchema schema, String miningViewName)  {
+    static String queryLogMinerContents(String schemaName, String logMinerUser, OracleDatabaseSchema schema, String miningViewName)  {
         List<String> whiteListTableNames = schema.tableIds().stream().map(TableId::table).collect(Collectors.toList());
 
         String sorting = "";
@@ -116,33 +115,6 @@ public class SqlUtils {
                 " OR (OPERATION_CODE IN (7,36) AND USERNAME NOT IN ('SYS','SYSTEM','"+logMinerUser.toUpperCase()+"'))" + sorting; //todo username = schemaName?
     }
 
-    public static String queryLogMinerContentsTemp(String schemaName, String logMinerUser, OracleDatabaseSchema schema, String miningViewName)  {
-        List<String> whiteListTableNames = schema.tableIds().stream().map(TableId::table).collect(Collectors.toList());
-
-        String sorting = "";
-        if (miningViewName.equalsIgnoreCase("logmnr_contents")){
-            sorting = " order by scn, rs_id, csf desc";
-        }
-        return "SELECT * " +
-                " FROM " + miningViewName +
-                " WHERE " +
-                // currently we do not capture changes from other schemas
-                " USERNAME = '"+ schemaName.toUpperCase() +"'" +
-                " AND OPERATION_CODE in (1,2,3,5) " +// 5 - DDL
-                " AND SEG_OWNER = '"+ schemaName.toUpperCase() +"' " +
-                buildTableInPredicate(whiteListTableNames) +
-//                        " (commit_scn >= ? " +
-                " AND SCN > ? AND SCN <= ? " +
-                //" OR (OPERATION_CODE IN (7,36) AND USERNAME ='"+schemaName.toUpperCase()+"')";
-                " OR (OPERATION_CODE IN (7,36) AND USERNAME NOT IN ('SYS','SYSTEM','"+logMinerUser.toUpperCase()+"'))" + sorting; //todo username = schemaName?
-    }
-
-    // todo
-    public static String queryCreateTempTable(String schemaName, String logMinerUser, OracleDatabaseSchema schema) {
-        return "CREATE TABLE PARALLEL NOLOGGING logmnr_contents AS " +
-        queryLogMinerContents(schemaName, logMinerUser, schema, "V$LOGMNR_CONTENTS");
-    }
-
     /**
      * After mining archived log files, we should remove them from the analysis.
      * NOTE. It does not physically remove the log file.
@@ -159,14 +131,6 @@ public class SqlUtils {
                 "LOGFILENAME => '" + fileName + "', " +
                 "OPTIONS => " + option + ");" +
                 "END;";
-    }
-
-    static String getRedoLogNameForScnQuery(Long scn){
-        return "with get_ranked as " +
-                "(SELECT F.MEMBER as member, r.first_change#, rank() over(order by r.first_change#  desc) as rank_num" +
-                "FROM V$LOGFILE F, V$LOG R WHERE F.GROUP# = R.GROUP# " +
-                "and r.first_change# <= "+scn+")" +
-                "select member from get_ranked where rank_num = 1";
     }
 
     /**
