@@ -7,7 +7,6 @@ package io.debezium.connector.oracle.logminer;
 
 import io.debezium.annotation.NotThreadSafe;
 import io.debezium.connector.oracle.OracleConnector;
-import io.debezium.connector.oracle.antlr.OracleDmlParser;
 import io.debezium.pipeline.ErrorHandler;
 import io.debezium.pipeline.source.spi.ChangeEventSource;
 import io.debezium.util.Threads;
@@ -19,7 +18,6 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -27,7 +25,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -48,7 +45,6 @@ public final class TransactionalBuffer {
     private final AtomicInteger taskCounter;
     private final ErrorHandler errorHandler;
     private Optional<TransactionalBufferMetrics> metrics;
-    private final Deque<OracleDmlParser> parsers = new ConcurrentLinkedDeque<>();
     private final Set<String> abandonedTransactionIds;
 
 
@@ -143,8 +139,10 @@ public final class TransactionalBuffer {
     }
 
     /**
-     * It could happen that the first DML of a transaction will fall out of online redo logs range.
-     * We don't mine archived logs, neither rely on continuous_mine configuration option.
+     * If for some reason the connector got restarted, the offset will point to the beginning of the oldest captured transaction.
+     * Taking in consideration offset flush interval, the offset could be even older.
+     * If that transaction was lasted for a long time, let say > 30 minutes, the offset will be not accessible after restart,
+     * because we don't mine archived logs, neither rely on continuous_mine configuration option.
      * Hence we have to address these cases manually.
      *
      * It is limited by  following condition:
@@ -172,10 +170,6 @@ public final class TransactionalBuffer {
             }
         }
     }
-
-    private void parse(String transactionId){
-        Transaction transaction = transactions.get(transactionId);
-    } // todo - maybe parse on commit (saving on rolled back DML), disadvantage - delay on commit
 
     private BigDecimal calculateSmallestScn() {
         BigDecimal scn = transactions.values()
@@ -258,13 +252,11 @@ public final class TransactionalBuffer {
         private final BigDecimal firstScn;
         private final List<CommitCallback> commitCallbacks;
         private final List<String> redoSqls;
-        private boolean parsingComplete;
 
         private Transaction(BigDecimal firstScn) {
             this.firstScn = firstScn;
             this.commitCallbacks = new ArrayList<>();
             this.redoSqls = new ArrayList<>();
-            parsingComplete = false;
         }
 
         private void addRedoSql(String redoSql){
@@ -276,13 +268,6 @@ public final class TransactionalBuffer {
             StringBuilder result =  new StringBuilder("First SCN = " + firstScn + "\nRedo SQL:\n ");
             redoSqls.forEach(sql -> result.append(sql).append("\n"));
             return result.toString();
-        }
-
-        private void setStatus(boolean completed){
-            this.parsingComplete = completed;
-        }
-        private boolean isCompleted(){
-            return this.parsingComplete;
         }
     }
 }

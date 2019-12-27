@@ -132,11 +132,10 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
 
                 // 2. Querying LogMiner view while running
                 while (context.isRunning()) {
-                    LOGGER.trace("Receiving a change from LogMiner");
                     metronome = Metronome.sleeper(Duration.ofMillis(logMinerMetrics.getMillisecondToSleepBetweenMiningQuery()), clock);
 
                     nextScn = LogMinerHelper.getNextScn(connection, lastProcessedScn, logMinerMetrics);
-                    LOGGER.trace("lastProcessedScn: {}, endScn: {}", lastProcessedScn, nextScn);
+                    LOGGER.trace("startScn: {}, endScn: {}", lastProcessedScn, nextScn);
 
                     String possibleNewCurrentLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
 
@@ -169,7 +168,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                             LOGGER.debug("offset before: {}, offset after:{}, next SCN:{}", offsetContext.getScn(), scn, nextScn);
                         });
 
-                        LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics); // todo : check if it slows down the iteration
+                        LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
 
                         currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
                     }
