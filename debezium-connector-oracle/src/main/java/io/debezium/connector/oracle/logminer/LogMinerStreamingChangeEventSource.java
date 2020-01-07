@@ -205,13 +205,9 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                 throw new RuntimeException(e);
             } finally {
                 LOGGER.info("lastProcessedScn={}, nextScn={}, offsetContext.getScn()={}", lastProcessedScn, nextScn, offsetContext.getScn());
-                if (transactionalBuffer != null) {
-                    LOGGER.info("Transactional metrics dump: {}", transactionalBufferMetrics.toString());
-                    LOGGER.info("Transactional buffer dump: {}", transactionalBuffer.toString());
-                }
-                if (logMinerMetrics != null) {
-                    LOGGER.info("LogMiner metrics dump: {}", logMinerMetrics.toString());
-                }
+                LOGGER.info("Transactional buffer metrics dump: {}", transactionalBufferMetrics.toString());
+                LOGGER.info("Transactional buffer dump: {}", transactionalBuffer.toString());
+                LOGGER.info("LogMiner metrics dump: {}", logMinerMetrics.toString());
             }
         }
     }
