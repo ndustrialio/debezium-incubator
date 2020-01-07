@@ -105,8 +105,8 @@ public class LogMinerQueryResultProcessor {
                 LOGGER.trace("COMMIT, {}", logMessage);
                 if (transactionalBuffer.commit(txId, changeTime, context, logMessage)){
                     commitCounter++;
+                    cumulativeCommitTime = cumulativeCommitTime.plus(Duration.between(iterationStart, Instant.now()));
                 }
-                cumulativeCommitTime = cumulativeCommitTime.plus(Duration.between(iterationStart, Instant.now()));
                 continue;
             }
 
@@ -115,8 +115,8 @@ public class LogMinerQueryResultProcessor {
                 LOGGER.trace("ROLLBACK, {}", logMessage);
                 if (transactionalBuffer.rollback(txId, logMessage)){
                     rollbackCounter++;
+                    cumulativeRollbackTime = cumulativeRollbackTime.plus(Duration.between(iterationStart, Instant.now()));
                 }
-                cumulativeRollbackTime = cumulativeRollbackTime.plus(Duration.between(iterationStart, Instant.now()));
                 continue;
             }
 

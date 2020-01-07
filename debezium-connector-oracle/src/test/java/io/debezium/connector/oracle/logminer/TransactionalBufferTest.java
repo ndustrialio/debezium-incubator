@@ -106,7 +106,7 @@ public class TransactionalBufferTest {
         });
         transactionalBuffer.commit(TRANSACTION_ID, TIMESTAMP, () -> true, MESSAGE);
         commitLatch.await();
-        assertThat(smallestScnContainer.get()).isNull();
+        assertThat(smallestScnContainer.get()).isEqualTo(SCN);
     }
 
     @Test
@@ -120,7 +120,7 @@ public class TransactionalBufferTest {
         transactionalBuffer.registerCommitCallback(OTHER_TRANSACTION_ID, OTHER_SCN, Instant.now(), "", (timestamp, smallestScn) -> { });
         transactionalBuffer.commit(TRANSACTION_ID, TIMESTAMP, () -> true, MESSAGE);
         commitLatch.await();
-        assertThat(smallestScnContainer.get()).isEqualTo(OTHER_SCN);
+        assertThat(smallestScnContainer.get()).isEqualTo(SCN);
     }
 
     @Test

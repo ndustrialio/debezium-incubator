@@ -58,6 +58,7 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         oldestScn.set(scn);
     }
 
+    // todo deal with timezones
     void setLagFromTheSource(Instant changeTime){
         if (changeTime != null) {
             lagFromTheSource.set(Duration.between(changeTime, Instant.now()));
@@ -171,7 +172,7 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
                 ", committedDmlCounter=" + committedDmlCounter.get() +
                 ", maxLagFromTheSource=" + maxLagFromTheSource.get() +
                 ", minLagFromTheSource=" + minLagFromTheSource.get() +
-                ", totalLagsFromTheSource=" + totalLagsFromTheSource.get() +
+                ", averageLagsFromTheSource=" + getAverageLagFromSource() +
                 ", abandonedTransactionIds=" + abandonedTransactionIds.get() +
                 '}';
     }
