@@ -102,6 +102,7 @@ public final class TransactionalBuffer {
      * @return true if committed transaction is in the buffer
      */
     boolean commit(String transactionId, Timestamp timestamp, ChangeEventSource.ChangeEventSourceContext context, String debugMessage) {
+        BigDecimal smallestScn = transactions.isEmpty() ? null : calculateSmallestScn();
         Transaction transaction = transactions.remove(transactionId);
         if (transaction == null) {
             return false;
@@ -110,7 +111,6 @@ public final class TransactionalBuffer {
         abandonedTransactionIds.remove(transactionId);
 
         List<CommitCallback> commitCallbacks = transaction.commitCallbacks;
-        BigDecimal smallestScn = transactions.isEmpty() ? null : calculateSmallestScn();
         LOGGER.trace("COMMIT, {}, smallest SCN: {}", debugMessage, smallestScn);
         executor.execute(() -> {
             try {
