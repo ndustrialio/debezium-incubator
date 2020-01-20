@@ -234,17 +234,17 @@ public class LogMinerHelper {
             jdbcConnection.setSessionToPdb(pdbName);
         }
 
-        final String globalLevelLogging = "SUPPLEMENTAL_LOG_DATA_ALL";
-        String validateGlobalLogging = "SELECT '" + globalLevelLogging + "', " + globalLevelLogging + " from V$DATABASE";
-        String tableLevelLogging = "ALL_COLUMN_LOGGING";
-        String validateTableLevelLogging = "SELECT '" + tableLevelLogging + "', LOG_GROUP_TYPE FROM DBA_LOG_GROUPS WHERE TABLE_NAME = '";
+        final String key = "KEY";
+        String validateGlobalLogging = "SELECT '" + key + "', " + " SUPPLEMENTAL_LOG_DATA_ALL from V$DATABASE";
         Map<String, String> globalLogging = getMap(connection, validateGlobalLogging, "unknown");
-        if ("no".equalsIgnoreCase(globalLogging.get(globalLevelLogging))) {
+        if ("no".equalsIgnoreCase(globalLogging.get(key))) {
             tableIds.forEach(table -> {
                 String tableName = table.schema() + "." + table.table();
                 try {
-                    Map<String, String> tableLogging = getMap(connection, validateTableLevelLogging + tableName.toUpperCase() + "'", "unknown");
-                    if (tableLogging.get(tableLevelLogging) != null) {
+                    String validateTableLevelLogging = String.format("SELECT '%s', LOG_GROUP_TYPE FROM DBA_LOG_GROUPS WHERE LOG_GROUP_TYPE='ALL COLUMN LOGGING' AND OWNER ='%s' AND TABLE_NAME = '%s'", key,
+                            table.schema().toUpperCase(), table.table().toUpperCase());
+                    Map<String, String> tableLogging = getMap(connection, validateTableLevelLogging, "unknown");
+                    if (tableLogging.get(key) == null) {
                         String alterTableStatement = "ALTER TABLE " + tableName + " ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS";
                         LOGGER.info("altering table {} for supplemental logging", table.table());
                         executeCallableStatement(connection, alterTableStatement);
