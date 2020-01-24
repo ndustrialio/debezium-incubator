@@ -155,6 +155,7 @@ public final class TransactionalBuffer {
      * In other words connector will not send any part of this transaction to Kafka
      * @param thresholdScn the smallest SVN of any transaction to keep in the buffer. All others will be removed.
      */
+    // todo calculate smallest SCN as a new OffsetScn
     void abandonLongTransactions(Long thresholdScn){
         BigDecimal threshold = new BigDecimal(thresholdScn);
         Iterator<Map.Entry<String, Transaction>> iter = transactions.entrySet().iterator();
@@ -195,6 +196,7 @@ public final class TransactionalBuffer {
             abandonedTransactionIds.remove(transactionId);
             metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
             metrics.ifPresent(TransactionalBufferMetrics::incrementRolledBackTransactions);
+            calculateSmallestScn();
             return true;
         }
         return false;
