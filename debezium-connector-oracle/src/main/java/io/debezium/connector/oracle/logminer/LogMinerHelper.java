@@ -215,7 +215,7 @@ public class LogMinerHelper {
     private static void removeLogFileFromMining(String logFileName, Connection connection) throws SQLException {
         String removeLogFileFromMining = SqlUtils.getRemoveLogFileFromMiningStatement(logFileName);
         executeCallableStatement(connection, removeLogFileFromMining);
-        LOGGER.debug("{} was removed from mining", removeLogFileFromMining);
+        LOGGER.debug("{} was removed from mining session", removeLogFileFromMining);
 
     }
 
@@ -284,36 +284,27 @@ public class LogMinerHelper {
     }
 
     /**
-     * This method substitutes CONTINUOUS_MINE functionality
+     * This method substitutes CONTINUOUS_MINE functionality for online files only
      * @param connection connection
      * @param lastProcessedScn current offset
-     * @param currentLogFilesForMining list of files we are currently mining
      * @throws SQLException if anything unexpected happens
      */
-    static void setRedoLogFilesForMining(Connection connection, Long lastProcessedScn, List<String> currentLogFilesForMining) throws SQLException {
+    static void setRedoLogFilesForMining(Connection connection, Long lastProcessedScn) throws SQLException {
 
-        Map<String, Long> logFilesForMining = getCurrentlyMinedLogFiles(connection, lastProcessedScn);
+        Map<String, Long> logFilesForMining = getLogFilesForOffsetScn(connection, lastProcessedScn);
         if (logFilesForMining.isEmpty()) {
-            throw new IllegalStateException("The offset SCN is not in online REDO");
+            throw new IllegalStateException("The online log files do not contain offset SCN, re-snapshot is required.");
         }
+
         List<String> logFilesNamesForMining = logFilesForMining.entrySet().stream().map(Map.Entry::getKey).collect(Collectors.toList());
 
-        LOGGER.debug("Last processed SCN: {}, List to mine: {}\n", lastProcessedScn, logFilesForMining);
-        List<String> outdatedFiles = currentLogFilesForMining.stream().filter(file -> !logFilesNamesForMining.contains(file)).collect(Collectors.toList());
-        for (String file : outdatedFiles) {
-            removeLogFileFromMining(file, connection);
-            LOGGER.debug("deleted outdated file {}", file);
-            currentLogFilesForMining.remove(file);
-        }
-
-        List<String> filesToAddForMining = logFilesNamesForMining.stream().filter(file -> !currentLogFilesForMining.contains(file)).collect(Collectors.toList());
-        for (String file : filesToAddForMining) {
+        for (String file : logFilesNamesForMining) {
             String addLogFileStatement = SqlUtils.getAddLogFileStatement("DBMS_LOGMNR.ADDFILE", file);
             executeCallableStatement(connection, addLogFileStatement);
-            LOGGER.debug("log file added = {}", file);
-            currentLogFilesForMining.add(file);
+            LOGGER.debug("add log file to the mining session = {}", file);
         }
-        LOGGER.debug("Current list to mine: {}\n", currentLogFilesForMining);
+
+        LOGGER.debug("Last mined SCN: {}, Log file list to mine: {}\n", lastProcessedScn, logFilesForMining);
     }
 
     /**
@@ -325,21 +316,25 @@ public class LogMinerHelper {
      * @return Optional last SCN in a redo log
      * @throws SQLException if anything unexpected happens
      */
-    static Optional<Long> getLastScnFromTheOldestMiningRedo(Connection connection, Long lastProcessedScn) throws SQLException {
+    static Optional<Long> getLastScnFromTheOldestOnlineRedo(Connection connection, Long lastProcessedScn) throws SQLException {
         Map<String, String> allOnlineRedoLogFiles = getMap(connection, SqlUtils.ALL_ONLINE_LOGS, "-1");
 
-        Map<String, Long> currentlyMinedLogFiles = getCurrentlyMinedLogFiles(connection, lastProcessedScn);
-        LOGGER.debug("Redo log size = {}, needed for mining files size = {}", allOnlineRedoLogFiles.size(), currentlyMinedLogFiles.size());
+        Map<String, Long> logFilesToMine = getLogFilesForOffsetScn(connection, lastProcessedScn);
+        LOGGER.debug("Redo log size = {}, needed for mining files size = {}", allOnlineRedoLogFiles.size(), logFilesToMine.size());
 
-        if (allOnlineRedoLogFiles.size() - currentlyMinedLogFiles.size() <= 1){
-            List<Long> lastScnInOldestMinedRedo = currentlyMinedLogFiles.entrySet().stream().map(Map.Entry::getValue).collect(Collectors.toList());
-            return lastScnInOldestMinedRedo.stream().min(Long::compareTo);
+        if (allOnlineRedoLogFiles.size() - logFilesToMine.size() <= 1){
+            List<Long> lastScnInOldestOnlineRedo = logFilesToMine.entrySet().stream().map(Map.Entry::getValue).collect(Collectors.toList());
+            return lastScnInOldestOnlineRedo.stream().min(Long::compareTo);
         }
         return Optional.empty();
     }
 
-    // 18446744073709551615 on Ora 19c is the max value of the nextScn in the current redo todo replace all Long with BigDecimal for SCN
-    private static Map<String, Long> getCurrentlyMinedLogFiles(Connection connection, Long offsetScn) throws SQLException {
+
+    /**
+     * This method returns all online log files, starting from one which contains offset SCN and ending with one containing largest SCN
+     * 18446744073709551615 on Ora 19c is the max value of the nextScn in the current redo todo replace all Long with BigDecimal for SCN
+     */
+    private static Map<String, Long> getLogFilesForOffsetScn(Connection connection, Long offsetScn) throws SQLException {
         Map<String, String> redoLogFiles = getMap(connection, SqlUtils.ALL_ONLINE_LOGS, "-1");
         return redoLogFiles.entrySet().stream().
                 filter(entry -> new BigDecimal(entry.getValue()).longValue() > offsetScn || new BigDecimal(entry.getValue()).longValue() == -1).

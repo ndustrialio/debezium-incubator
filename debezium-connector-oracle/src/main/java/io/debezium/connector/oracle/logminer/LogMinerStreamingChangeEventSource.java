@@ -25,11 +25,8 @@ import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -120,9 +117,8 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     LogMinerHelper.buildDataDictionary(connection);
                 }
 
-                List<String> filesToMine = new ArrayList<>();
                 if (!isContinuousMining) {
-                    LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn, filesToMine);
+                    LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
                 }
                 LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
                 String currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
@@ -143,30 +139,24 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                         LOGGER.debug("\n\n***** SWITCH occurred *****\n" + " from:{} , to:{} \n\n", currentRedoLogFile, possibleNewCurrentLogFile);
 
                         // This is the way to mitigate PGA leak.
-                        // With one mining session it grows and maybe there is another way to flush PGA, but at this point we use new session
+                        // With one mining session it grows and maybe there is another way to flush PGA, but at this point we use new mining session
                         LogMinerHelper.endMining(connection);
 
                         if (!isContinuousMining) {
-                            filesToMine.clear();
                             if (strategy == OracleConnectorConfig.LogMiningStrategy.CATALOG_IN_REDO) {
                                 LogMinerHelper.buildDataDictionary(connection);
                             }
-                            LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn, filesToMine);
-                        }
 
-                        // Abandon long running transactions
-                        Optional<Long> oldestScnToAbandonTransactions = LogMinerHelper.getLastScnFromTheOldestMiningRedo(connection, offsetContext.getScn());
-                        oldestScnToAbandonTransactions.ifPresent(scn -> {
-                            transactionalBuffer.abandonLongTransactions(scn);
-                            offsetContext.setScn(scn);
-                            try {
-                                nextScn = LogMinerHelper.getNextScn(connection, lastProcessedScn, logMinerMetrics);
-                                LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn, filesToMine);
-                            } catch (SQLException e) {
-                                LOGGER.error("Couldn't abandon transactions due to {}", e);
-                            }
-                            LOGGER.debug("offset before: {}, offset after:{}, next SCN:{}", offsetContext.getScn(), scn, nextScn);
-                        });
+                            // Abandon long running transactions
+                            Optional<Long> oldestScnToAbandonTransactions = LogMinerHelper.getLastScnFromTheOldestOnlineRedo(connection, offsetContext.getScn());
+                            oldestScnToAbandonTransactions.ifPresent(nextOldestScn -> {
+                                transactionalBuffer.abandonLongTransactions(nextOldestScn);
+                                offsetContext.setScn(nextOldestScn);
+                                LOGGER.debug("After abandoning, offset before: {}, offset after:{}", offsetContext.getScn(), nextOldestScn);
+                            });
+
+                            LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
+                        }
 
                         LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
 
@@ -188,7 +178,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                         metronome.pause();
                     }
 
-                    // update SCN in offset context only if buffer is empty
+                    // update SCN in offset context only if buffer is empty, otherwise we update offset in TransactionalBuffer
                     if (transactionalBuffer.isEmpty()) {
                         offsetContext.setScn(nextScn);
                     }
