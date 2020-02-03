@@ -102,7 +102,7 @@ public final class TransactionalBuffer {
      * @return true if committed transaction is in the buffer
      */
     boolean commit(String transactionId, Timestamp timestamp, ChangeEventSource.ChangeEventSourceContext context, String debugMessage) {
-        BigDecimal smallestScn = transactions.isEmpty() ? null : calculateSmallestScn();
+        BigDecimal smallestScn = calculateSmallestScn();
         Transaction transaction = transactions.remove(transactionId);
         if (transaction == null) {
             return false;
@@ -173,12 +173,12 @@ public final class TransactionalBuffer {
     }
 
     private BigDecimal calculateSmallestScn() {
-        BigDecimal scn = transactions.values()
+        BigDecimal scn = transactions.isEmpty() ? null : transactions.values()
                 .stream()
                 .map(transaction -> transaction.firstScn)
                 .min(BigDecimal::compareTo)
                 .orElseThrow(() -> new DataException("Cannot calculate smallest SCN"));
-        metrics.ifPresent(m -> m.setOldestScn(scn.longValue()));
+        metrics.ifPresent(m -> m.setOldestScn(scn == null ? null : scn.longValue()));
         return scn;
     }
 
