@@ -178,7 +178,7 @@ public final class TransactionalBuffer {
                 .map(transaction -> transaction.firstScn)
                 .min(BigDecimal::compareTo)
                 .orElseThrow(() -> new DataException("Cannot calculate smallest SCN"));
-        metrics.ifPresent(m -> m.setOldestScn(scn == null ? null : scn.longValue()));
+        metrics.ifPresent(m -> m.setOldestScn(scn == null ? -1 : scn.longValue()));
         return scn;
     }
 
