@@ -208,13 +208,10 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     }
 
     private boolean connectionProblem (Throwable e){
-        if (e.getMessage() == null || e.getCause() == null) {
-            return false;
-        }
         return e.getMessage().startsWith("ORA-03135") ||
                 e.getMessage().startsWith("ORA-12543") ||
                 e.getCause() instanceof IOException ||
-                e.getCause().getCause() instanceof NetException;
+                (e.getCause() != null && e.getCause().getCause() instanceof NetException);
 
     }
 }

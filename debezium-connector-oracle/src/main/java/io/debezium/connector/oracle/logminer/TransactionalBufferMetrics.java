@@ -152,7 +152,7 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
 
     @Override
     public long getAverageLagFromSource() {
-        return totalLagsFromTheSource.get().toMillis()/(capturedDmlCounter.get() == 0 ? 1 : capturedDmlCounter.get());
+        return totalLagsFromTheSource.get().toMillis()/capturedDmlCounter.get() == 0 ? 1 : capturedDmlCounter.get();
     }
 
     @Override
