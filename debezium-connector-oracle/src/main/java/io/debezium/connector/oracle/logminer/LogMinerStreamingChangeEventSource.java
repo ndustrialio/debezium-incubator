@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLRecoverableException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
@@ -188,10 +189,10 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                 }
             } catch (Throwable e) {
                 if (connectionProblem(e)) {
-                    LOGGER.warn("Disconnection occurred. {} ", e);
+                    LOGGER.warn("Disconnection occurred. {} ", e.toString());
                     continue;
                 }
-                LOGGER.error("Mining session was stopped due to the {} ", e);
+                LOGGER.error("Mining session was stopped due to the {} ", e.toString());
                 throw new RuntimeException(e);
             } finally {
                 LOGGER.info("lastProcessedScn={}, nextScn={}, offsetContext.getScn()={}", lastProcessedScn, nextScn, offsetContext.getScn());
@@ -211,10 +212,13 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
         if (e.getMessage() == null || e.getCause() == null) {
             return false;
         }
-        return e.getMessage().startsWith("ORA-03135") ||
-                e.getMessage().startsWith("ORA-12543") ||
+        return  e.getMessage().startsWith("ORA-03135") || // connection lost contact
+                e.getMessage().startsWith("ORA-12543") || // TNS:destination host unreachable
+                e.getMessage().startsWith("ORA-00604") || // error occurred at recursive SQL level 1
+                e.getMessage().startsWith("ORA-01089") || // Oracle immediate shutdown in progress
                 e.getCause() instanceof IOException ||
+                e instanceof SQLRecoverableException ||
+                e.getMessage().toUpperCase().startsWith("NO MORE DATA TO READ FROM SOCKET") ||
                 e.getCause().getCause() instanceof NetException;
-
     }
 }
