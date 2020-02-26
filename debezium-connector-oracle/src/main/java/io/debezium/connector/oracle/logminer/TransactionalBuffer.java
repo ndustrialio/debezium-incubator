@@ -238,7 +238,7 @@ public final class TransactionalBuffer {
     }
 
     private void calculateLargestFirstScn() {
-        largestFirstScn = transactions.isEmpty() ? null : transactions.values()
+        largestFirstScn = transactions.isEmpty() ? BigDecimal.ZERO : transactions.values()
                 .stream()
                 .map(transaction -> transaction.firstScn)
                 .max(BigDecimal::compareTo)
@@ -247,7 +247,7 @@ public final class TransactionalBuffer {
     }
 
     private void calculateLargestLastScn() {
-        largestLastScn = transactions.isEmpty() ? null : transactions.values()
+        largestLastScn = transactions.isEmpty() ? BigDecimal.ZERO : transactions.values()
                 .stream()
                 .map(transaction -> transaction.lastScn)
                 .max(BigDecimal::compareTo)
