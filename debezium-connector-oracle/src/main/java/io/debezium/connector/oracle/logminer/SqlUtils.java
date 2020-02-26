@@ -109,10 +109,8 @@ class SqlUtils {
                 " AND OPERATION_CODE in (1,2,3,5) " +// 5 - DDL
                 " AND SEG_OWNER = '"+ schemaName.toUpperCase() +"' " +
                 buildTableInPredicate(whiteListTableNames) +
-//                        " (commit_scn >= ? " +
-                " AND SCN > ? AND SCN <= ? " +
-                //" OR (OPERATION_CODE IN (7,36) AND USERNAME ='"+schemaName.toUpperCase()+"')";
-                " OR (OPERATION_CODE IN (7,36) AND USERNAME NOT IN ('SYS','SYSTEM','"+logMinerUser.toUpperCase()+"'))" + sorting; //todo username = schemaName?
+                " AND SCN >= ? AND SCN <= ? " +
+                " OR (OPERATION_CODE IN (7,34,36) AND USERNAME NOT IN ('SYS','SYSTEM','"+logMinerUser.toUpperCase()+"'))" + sorting; //todo username = schemaName?
     }
 
     /**

@@ -39,6 +39,7 @@ public class TransactionalBufferTest {
     private static final String MESSAGE = "OK";
     private static final BigDecimal SCN = BigDecimal.ONE;
     private static final BigDecimal OTHER_SCN = BigDecimal.TEN;
+    private static final BigDecimal LARGEST_SCN = BigDecimal.valueOf(100L);
     private static final Timestamp TIMESTAMP = new Timestamp(System.currentTimeMillis());
 
     private ErrorHandler errorHandler;
@@ -156,6 +157,40 @@ public class TransactionalBufferTest {
         transactionalBuffer.registerCommitCallback(OTHER_TRANSACTION_ID, OTHER_SCN, Instant.now(), SQL_TWO, (timestamp, smallestScn) -> {});
         assertThat(transactionalBuffer.toString()).contains(SQL_ONE);
         assertThat(transactionalBuffer.toString()).contains(SQL_TWO);
+    }
+
+    @Test
+    public void testDuplicatedRedoSql() {
+
+        assertThat(transactionalBuffer.getLargestFirstScn().equals(BigDecimal.ZERO));
+
+        final String insertIntoATable = "insert into a table";
+        final String anotherInsertIntoATable = "another insert into a table";
+        final String duplicatedInsertIntoATable = "duplicated insert into a table";
+
+        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, SCN, Instant.now(), insertIntoATable, (timestamp, smallestScn) -> { });
+        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, OTHER_SCN, Instant.now(), duplicatedInsertIntoATable, (timestamp, smallestScn) -> { });
+        assertThat(transactionalBuffer.getLargestFirstScn().equals(OTHER_SCN));
+        assertThat(transactionalBuffer.toString().contains(insertIntoATable));
+        assertThat(transactionalBuffer.toString().contains(duplicatedInsertIntoATable));
+
+        transactionalBuffer.registerCommitCallback(OTHER_TRANSACTION_ID, LARGEST_SCN, Instant.now(), insertIntoATable, (timestamp, smallestScn) -> { });
+        transactionalBuffer.registerCommitCallback(OTHER_TRANSACTION_ID, OTHER_SCN, Instant.now(), duplicatedInsertIntoATable, (timestamp, smallestScn) -> { });
+        assertThat(transactionalBuffer.getLargestFirstScn().equals(LARGEST_SCN));
+        assertThat(transactionalBuffer.toString().contains(insertIntoATable));
+        assertThat(transactionalBuffer.toString().contains(duplicatedInsertIntoATable));
+        // make sure the duplications are OK in different transactions
+        assertThat(transactionalBuffer.toString().indexOf(duplicatedInsertIntoATable) != transactionalBuffer.toString().lastIndexOf(duplicatedInsertIntoATable));
+
+        transactionalBuffer.registerCommitCallback(OTHER_TRANSACTION_ID, OTHER_SCN, Instant.now(), anotherInsertIntoATable, (timestamp, smallestScn) -> { });
+        assertThat(transactionalBuffer.toString().contains(anotherInsertIntoATable));
+        transactionalBuffer.rollback(OTHER_TRANSACTION_ID, "");
+
+        // try to duplicate sql for the same transaction for the same SCN
+        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, OTHER_SCN, Instant.now(), duplicatedInsertIntoATable, (timestamp, smallestScn) -> { });
+
+        assertThat(transactionalBuffer.toString().indexOf(duplicatedInsertIntoATable) == transactionalBuffer.toString().lastIndexOf(duplicatedInsertIntoATable));
+        assertThat(transactionalBuffer.getLargestFirstScn().equals(LARGEST_SCN));
     }
 
 }
