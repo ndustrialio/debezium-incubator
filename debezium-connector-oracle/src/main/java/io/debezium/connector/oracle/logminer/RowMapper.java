@@ -31,6 +31,7 @@ public class RowMapper {
     public static final int UPDATE = 3;
     public static final int DDL = 5;
     public static final int COMMIT = 7;
+    public static final int MISSING_SCN = 34;
     public static final int ROLLBACK = 36;
 
     private static final int SCN = 1;

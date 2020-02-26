@@ -22,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -57,6 +58,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     private final boolean isContinuousMining;
     private long lastProcessedScn;
     private long nextScn;
+    //private long startMiningScn;
 
     public LogMinerStreamingChangeEventSource(OracleConnectorConfig connectorConfig, OracleOffsetContext offsetContext,
                                               OracleConnection jdbcConnection, EventDispatcher<TableId> dispatcher,
@@ -94,6 +96,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     @Override
     public void execute(ChangeEventSourceContext context) throws InterruptedException {
         Metronome metronome;
+        final long STEP_BACK = 400L; // todo calculate it, based on committed scn
 
         // The top outer loop gives the resiliency on the network disconnections. This is critical for cloud deployment.
         while(context.isRunning()) {
@@ -103,6 +106,8 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                                  queryLogMinerContents(connectorConfig.getSchemaName(), jdbcConnection.username(), schema, SqlUtils.LOGMNR_CONTENTS_VIEW))) {
 
                 lastProcessedScn = offsetContext.getScn();
+                //startMiningScn = offsetContext.getScn();
+
                 long oldestScnInOnlineRedo = LogMinerHelper.getFirstOnlineLogScn(connection);
                 if (lastProcessedScn < oldestScnInOnlineRedo) {
                     throw new RuntimeException("Online REDO LOG files don't contain the offset SCN. Clean offset and start over");
@@ -156,7 +161,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                                 LOGGER.debug("After abandoning, offset before: {}, offset after:{}", offsetContext.getScn(), nextOldestScn);
                             });
 
-                            LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
+                            LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn - STEP_BACK);
                         }
 
                         LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
@@ -164,7 +169,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                         currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
                     }
 
-                    LogMinerHelper.startOnlineMining(connection, lastProcessedScn, nextScn, strategy, isContinuousMining);
+                    LogMinerHelper.startOnlineMining(connection, lastProcessedScn - STEP_BACK, nextScn, strategy, isContinuousMining);
 
                     Instant startTime = Instant.now();
                     fetchFromMiningView.setLong(1, lastProcessedScn);
@@ -179,11 +184,18 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                         metronome.pause();
                     }
 
+                    // get largest scn from the last uncommitted transaction and set as last processed scn
+                    LOGGER.trace("largest first scn = {}, largest last scn = {}", transactionalBuffer.getLargestFirstScn(), transactionalBuffer.getLargestLastScn());
+
+                    lastProcessedScn  = transactionalBuffer.getLargestLastScn().equals(BigDecimal.ZERO) ? nextScn : transactionalBuffer.getLargestLastScn().longValue();
+
                     // update SCN in offset context only if buffer is empty, otherwise we update offset in TransactionalBuffer
                     if (transactionalBuffer.isEmpty()) {
-                        offsetContext.setScn(nextScn);
+                        offsetContext.setScn(lastProcessedScn);
+                        transactionalBuffer.resetLargestScns();
                     }
-                    lastProcessedScn = nextScn;
+
+//                    startMiningScn  = transactionalBuffer.getLargestFirstScn().equals(BigDecimal.ZERO) ? nextScn : transactionalBuffer.getLargestFirstScn().longValue();
 
                     res.close();
                 }
