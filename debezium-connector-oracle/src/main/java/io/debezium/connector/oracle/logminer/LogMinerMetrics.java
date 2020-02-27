@@ -12,7 +12,6 @@ import io.debezium.metrics.Metrics;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -37,13 +36,12 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     private AtomicInteger maxBatchSize = new AtomicInteger();
     private AtomicInteger millisecondToSleepBetweenMiningQuery = new AtomicInteger();
     private AtomicInteger fetchedRecordSizeLimitToFallAsleep = new AtomicInteger();
-    private AtomicBoolean ctas = new AtomicBoolean();
 
     LogMinerMetrics(CdcSourceTaskContext taskContext) {
         super(taskContext, "log-miner");
 
         maxBatchSize.set(2000);
-        millisecondToSleepBetweenMiningQuery.set(500);
+        millisecondToSleepBetweenMiningQuery.set(1000);
         fetchedRecordSizeLimitToFallAsleep.set(50);
 
         currentScn.set(-1);
@@ -57,8 +55,6 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
         lastProcessedCapturedBatchDuration.set(Duration.ZERO);
         processedCapturedBatchCount.set(0);
         averageProcessedCapturedBatchDuration.set(Duration.ZERO);
-
-        ctas.set(false);
     }
 
     // setters
@@ -182,16 +178,6 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
         if (size >= 50 && size <= 200) {
             fetchedRecordSizeLimitToFallAsleep.set(size);
         }
-    }
-
-    @Override
-    public boolean getCTAS() {
-        return ctas.get();
-    }
-
-    @Override
-    public void setCTAS(boolean ctas) {
-//        this.ctas.set(ctas);
     }
 
     // private methods

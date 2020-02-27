@@ -39,6 +39,7 @@ public class TransactionalBufferTest {
     private static final String MESSAGE = "OK";
     private static final BigDecimal SCN = BigDecimal.ONE;
     private static final BigDecimal OTHER_SCN = BigDecimal.TEN;
+    private static final BigDecimal LARGEST_SCN = BigDecimal.valueOf(100L);
     private static final Timestamp TIMESTAMP = new Timestamp(System.currentTimeMillis());
 
     private ErrorHandler errorHandler;
@@ -106,7 +107,7 @@ public class TransactionalBufferTest {
         });
         transactionalBuffer.commit(TRANSACTION_ID, TIMESTAMP, () -> true, MESSAGE);
         commitLatch.await();
-        assertThat(smallestScnContainer.get()).isNull();
+        assertThat(smallestScnContainer.get()).isEqualTo(SCN);
     }
 
     @Test
@@ -120,7 +121,7 @@ public class TransactionalBufferTest {
         transactionalBuffer.registerCommitCallback(OTHER_TRANSACTION_ID, OTHER_SCN, Instant.now(), "", (timestamp, smallestScn) -> { });
         transactionalBuffer.commit(TRANSACTION_ID, TIMESTAMP, () -> true, MESSAGE);
         commitLatch.await();
-        assertThat(smallestScnContainer.get()).isEqualTo(OTHER_SCN);
+        assertThat(smallestScnContainer.get()).isEqualTo(SCN);
     }
 
     @Test
@@ -157,5 +158,4 @@ public class TransactionalBufferTest {
         assertThat(transactionalBuffer.toString()).contains(SQL_ONE);
         assertThat(transactionalBuffer.toString()).contains(SQL_TWO);
     }
-
 }

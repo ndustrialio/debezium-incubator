@@ -16,22 +16,14 @@ public class OracleConnectionFactory implements ConnectionFactory {
 
     @Override
     public Connection connect(JdbcConfiguration config) throws SQLException {
-        String driverType = "oci";
-        String user = config.getUser();
-        String password = config.getPassword();
-        String hostName = config.getHostname();
+        final String driverType = config.getString(OracleConnectorConfig.DRIVER_TYPE);
+        final String user = config.getUser();
+        final String password = config.getPassword();
+        final String hostName = config.getHostname();
         int port = config.getPort();
-        String database = config.getDatabase();
+        final String database = config.getDatabase();
+        final String url = "jdbc:oracle:" + driverType + ":@" + hostName + ":" + port + "/" + database;
 
-        String adapterString = config.getString("connection.adapter");
-        adapterString =  adapterString == null ?  config.getString(OracleConnectorConfig.CONNECTOR_ADAPTER) : adapterString;
-        OracleConnectorConfig.ConnectorAdapter adapter = OracleConnectorConfig.ConnectorAdapter.parse(adapterString);
-        if (adapter == OracleConnectorConfig.ConnectorAdapter.LOG_MINER) {
-            driverType = "thin";
-        }
-
-        return DriverManager.getConnection(
-              "jdbc:oracle:" + driverType + ":@" + hostName + ":" + port + "/" + database, user, password
-        );
+        return DriverManager.getConnection(url, user, password);
     }
 }

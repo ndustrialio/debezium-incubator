@@ -80,6 +80,7 @@ public class TestHelper {
     public static OracleConnection logMinerPdbConnection() {
         Configuration jdbcConfig = testJdbcConfig().edit()
                 .with(OracleConnectorConfig.CONNECTOR_ADAPTER, "LogMiner")
+                .with(OracleConnectorConfig.DRIVER_TYPE, "thin")
                 .build();
         return new OracleConnection(jdbcConfig, new OracleConnectionFactory());
     }

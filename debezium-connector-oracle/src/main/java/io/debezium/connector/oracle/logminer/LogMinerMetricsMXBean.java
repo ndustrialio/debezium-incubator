@@ -110,10 +110,4 @@ public interface LogMinerMetricsMXBean {
      * @param size number of records
      */
     void setFetchedRecordSizeLimitToFallAsleep(int size);
-
-    // not used for now
-    boolean getCTAS();
-
-    // not used for now
-    void setCTAS(boolean ctas);
 }
