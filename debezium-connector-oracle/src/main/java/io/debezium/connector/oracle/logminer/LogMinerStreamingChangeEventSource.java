@@ -50,7 +50,6 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
 //    private final OracleDmlParser dmlParser;
     private final SimpleDmlParser dmlParser;
     private final String catalogName;
-    //private final int posVersion;
     private OracleConnectorConfig connectorConfig;
     private final TransactionalBufferMetrics transactionalBufferMetrics;
     private final LogMinerMetrics logMinerMetrics;
@@ -58,7 +57,6 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     private final boolean isContinuousMining;
     private long lastProcessedScn;
     private long nextScn;
-    //private long startMiningScn;
 
     public LogMinerStreamingChangeEventSource(OracleConnectorConfig connectorConfig, OracleOffsetContext offsetContext,
                                               OracleConnection jdbcConnection, EventDispatcher<TableId> dispatcher,
@@ -96,7 +94,6 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     @Override
     public void execute(ChangeEventSourceContext context) throws InterruptedException {
         Metronome metronome;
-        final long STEP_BACK = 400L; // todo calculate it, based on committed scn
 
         // The top outer loop gives the resiliency on the network disconnections. This is critical for cloud deployment.
         while(context.isRunning()) {
@@ -106,7 +103,6 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                                  queryLogMinerContents(connectorConfig.getSchemaName(), jdbcConnection.username(), schema, SqlUtils.LOGMNR_CONTENTS_VIEW))) {
 
                 lastProcessedScn = offsetContext.getScn();
-                //startMiningScn = offsetContext.getScn();
 
                 long oldestScnInOnlineRedo = LogMinerHelper.getFirstOnlineLogScn(connection);
                 if (lastProcessedScn < oldestScnInOnlineRedo) {
@@ -161,7 +157,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                                 LOGGER.debug("After abandoning, offset before: {}, offset after:{}", offsetContext.getScn(), nextOldestScn);
                             });
 
-                            LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn - STEP_BACK);
+                            LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
                         }
 
                         LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
@@ -169,7 +165,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                         currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
                     }
 
-                    LogMinerHelper.startOnlineMining(connection, lastProcessedScn - STEP_BACK, nextScn, strategy, isContinuousMining);
+                    LogMinerHelper.startOnlineMining(connection, lastProcessedScn, nextScn, strategy, isContinuousMining);
 
                     Instant startTime = Instant.now();
                     fetchFromMiningView.setLong(1, lastProcessedScn);
@@ -185,19 +181,21 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     }
 
                     // get largest scn from the last uncommitted transaction and set as last processed scn
-                    LOGGER.trace("largest first scn = {}, largest last scn = {}", transactionalBuffer.getLargestFirstScn(), transactionalBuffer.getLargestLastScn());
+                    LOGGER.trace("largest scn = {}", transactionalBuffer.getLargestScn());
 
-                    lastProcessedScn  = transactionalBuffer.getLargestLastScn().equals(BigDecimal.ZERO) ? nextScn : transactionalBuffer.getLargestLastScn().longValue();
+                    lastProcessedScn  = transactionalBuffer.getLargestScn().equals(BigDecimal.ZERO) ? nextScn : transactionalBuffer.getLargestScn().longValue();
 
                     // update SCN in offset context only if buffer is empty, otherwise we update offset in TransactionalBuffer
                     if (transactionalBuffer.isEmpty()) {
                         offsetContext.setScn(lastProcessedScn);
-                        transactionalBuffer.resetLargestScns();
+                        transactionalBuffer.resetLargestScn();
                     }
 
-//                    startMiningScn  = transactionalBuffer.getLargestFirstScn().equals(BigDecimal.ZERO) ? nextScn : transactionalBuffer.getLargestFirstScn().longValue();
-
                     res.close();
+                    // we don't do it for other modes to save time on building data dictionary
+//                    if (strategy == OracleConnectorConfig.LogMiningStrategy.ONLINE_CATALOG) {
+//                        LogMinerHelper.endMining(connection);
+//                    }
                 }
             } catch (Throwable e) {
                 if (connectionProblem(e)) {
