@@ -19,7 +19,6 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -48,8 +47,7 @@ public final class TransactionalBuffer {
     private final ErrorHandler errorHandler;
     private Optional<TransactionalBufferMetrics> metrics;
     private final Set<String> abandonedTransactionIds;
-    private BigDecimal largestFirstScn;
-    private BigDecimal largestLastScn;
+    private BigDecimal largestScn;
 
     /**
      * Constructor to create a new instance.
@@ -68,34 +66,23 @@ public final class TransactionalBuffer {
         } else {
             this.metrics = Optional.empty();
         }
-        largestFirstScn = BigDecimal.ZERO;
-        largestLastScn = BigDecimal.ZERO;
+        largestScn = BigDecimal.ZERO;
         this.abandonedTransactionIds = new HashSet<>();
-    }
-
-    /**
-     * the largest SCN in entire buffer
-     *
-     * @return largest first SCN in the buffer among all transactions
-     */
-    public BigDecimal getLargestFirstScn() {
-        return largestFirstScn;
     }
 
     /**
      *
      * @return largest last SCN in the buffer among all transactions
      */
-    public BigDecimal getLargestLastScn() {
-        return largestLastScn;
+    public BigDecimal getLargestScn() {
+        return largestScn;
     }
 
     /**
      * Reset Largest SCNs
      */
-    public void resetLargestScns() {
-        largestLastScn = BigDecimal.ZERO;
-        largestFirstScn = BigDecimal.ZERO;
+    public void resetLargestScn() {
+        largestScn = BigDecimal.ZERO;
     }
 
     /**
@@ -123,19 +110,12 @@ public final class TransactionalBuffer {
         // Another way to do it would be storing Map of SCN and Tuple of RAW_ID and TABLE_NAME as unique identifier of a DML
         Transaction transaction = transactions.get(transactionId);
         if (transaction != null) {
-            if (transaction.lastScn != null && transaction.lastScn.equals(scn) && transaction.redoSqlMap.get(scn) != null) {
-                List<String> redoSqls = transaction.redoSqlMap.get(scn);
-                if (redoSqls.contains(redoSql)) {
-                    LOGGER.debug("Ignored duplicated capture as of SCN={}, REDO_SQL={}", scn, redoSql);
-                    return;
-                }
-            }
             transaction.commitCallbacks.add(callback);
             transaction.addRedoSql(scn, redoSql);
         }
 
-        if (scn.compareTo(largestLastScn) > 0) {
-            largestLastScn = scn;
+        if (scn.compareTo(largestScn) > 0) {
+            largestScn = scn;
         }
     }
 
@@ -152,8 +132,7 @@ public final class TransactionalBuffer {
         Transaction transaction = transactions.get(transactionId);
         if (transaction != null) {
             transaction.lastScn = transaction.lastScn.add(BigDecimal.ONE);
-            calculateLargestFirstScn();
-            calculateLargestLastScn();
+            calculateLargestScn();
         }
 
         transaction = transactions.remove(transactionId);
@@ -217,8 +196,7 @@ public final class TransactionalBuffer {
                 abandonedTransactionIds.add(transaction.getKey());
                 iter.remove();
 
-                calculateLargestFirstScn();
-                calculateLargestLastScn();
+                calculateLargestScn();
 
                 metrics.ifPresent(t -> t.addAbandonedTransactionId(transaction.getKey()));
                 metrics.ifPresent(t -> t.decrementCapturedDmlCounter(transaction.getValue().commitCallbacks.size()));
@@ -237,22 +215,12 @@ public final class TransactionalBuffer {
         return scn;
     }
 
-    private void calculateLargestFirstScn() {
-        largestFirstScn = transactions.isEmpty() ? BigDecimal.ZERO : transactions.values()
-                .stream()
-                .map(transaction -> transaction.firstScn)
-                .max(BigDecimal::compareTo)
-                .orElseThrow(() -> new DataException("Cannot calculate largest first SCN"));
-//        metrics.ifPresent(m -> m.setOldestScn(scn == null ? -1 : scn.longValue()));
-    }
-
-    private void calculateLargestLastScn() {
-        largestLastScn = transactions.isEmpty() ? BigDecimal.ZERO : transactions.values()
+    private void calculateLargestScn() {
+        largestScn = transactions.isEmpty() ? BigDecimal.ZERO : transactions.values()
                 .stream()
                 .map(transaction -> transaction.lastScn)
                 .max(BigDecimal::compareTo)
-                .orElseThrow(() -> new DataException("Cannot calculate largest last SCN"));
-//        metrics.ifPresent(m -> m.setOldestScn(scn == null ? -1 : scn.longValue()));
+                .orElseThrow(() -> new DataException("Cannot calculate largest SCN"));
     }
 
     /**
@@ -327,24 +295,18 @@ public final class TransactionalBuffer {
         // this is SCN candidate, not actual COMMITTED_SCN
         private BigDecimal lastScn;
         private final List<CommitCallback> commitCallbacks;
-        private final Map<BigDecimal, List<String>> redoSqlMap;
+        private final List<String> redoSqls; // TODO delete after debugging
 
         private Transaction(BigDecimal firstScn) {
             this.firstScn = firstScn;
             this.commitCallbacks = new ArrayList<>();
-            this.redoSqlMap = new HashMap<>();
+            this.redoSqls = new ArrayList<>();
             this.lastScn = firstScn;
         }
 
         private void addRedoSql(BigDecimal scn, String redoSql) {
             this.lastScn = scn;
-
-            List<String> sqlList = redoSqlMap.get(scn);
-            if (sqlList == null) {
-                redoSqlMap.put(scn, new ArrayList<>(Collections.singletonList(redoSql)));
-            } else {
-                sqlList.add(redoSql);
-            }
+            this.redoSqls.add(redoSql);
         }
 
         @Override
@@ -352,7 +314,7 @@ public final class TransactionalBuffer {
             return "Transaction{" +
                     "firstScn=" + firstScn +
                     ", lastScn=" + lastScn +
-                    ", redoSqls=" + Arrays.toString(redoSqlMap.values().toArray()) +
+                    ", redoSqls=" + Arrays.toString(redoSqls.toArray()) +
                     '}';
         }
     }
