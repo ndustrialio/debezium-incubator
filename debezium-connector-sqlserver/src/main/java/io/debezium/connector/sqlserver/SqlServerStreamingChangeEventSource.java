@@ -242,10 +242,12 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                         lastProcessedPosition = TxLogPosition.valueOf(currentMaxLsn);
                         // Terminate the transaction otherwise CDC could not be disabled for tables
                         dataConnection.rollback();
-                    } catch (SQLException e) {
-                        LOGGER.warn("Exception while processing table " + tablesSlot.get(), e);
+                    } catch (Exception e) {
+                        LOGGER.warn("Exception while processing table ", e);
                         try {
-                            tablesSlot.set(processErrorFromChangeTableQuery(e, tablesSlot.get()));
+                            if (e.getCause() instanceof  SQLException) {
+                                tablesSlot.set(processErrorFromChangeTableQuery((SQLException) e, tablesSlot.get()));
+                            }
                             dataConnection.close();
                             dataConnection.connection(false);
                             metadataConnection.close();
@@ -254,7 +256,7 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                             LOGGER.warn(ignore.getMessage(), ignore);
                         }
                     }
-                } catch (SQLException e) {
+                } catch (Exception e) {
                     LOGGER.warn("Exception while fetching max LSN", e);
                     try {
                         //if (e.getCause() instanceof SocketException) {
