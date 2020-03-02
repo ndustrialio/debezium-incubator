@@ -83,7 +83,7 @@ public class LogMinerHelper {
         long currentScn = getCurrentScn(connection);
         metrics.setCurrentScn(currentScn);
         int miningDiapason = metrics.getMaxBatchSize();
-        return currentScn < lastProcessesScn + miningDiapason ? currentScn : lastProcessesScn + miningDiapason;
+        return currentScn < (lastProcessesScn + miningDiapason) ? currentScn : lastProcessesScn + miningDiapason;
     }
 
     /**

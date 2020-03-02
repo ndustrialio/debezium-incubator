@@ -19,16 +19,20 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 /**
  * @author Andrey Pustovetov
@@ -96,7 +100,7 @@ public final class TransactionalBuffer {
      */
     void registerCommitCallback(String transactionId, BigDecimal scn, Instant changeTime, String redoSql, CommitCallback callback) {
         if (abandonedTransactionIds.contains(transactionId)) {
-            LOGGER.error("Another DML for an abandoned transaction {} : {}", transactionId, redoSql);
+            LOGGER.warn("Another DML for an abandoned transaction {} : {}, ignored", transactionId, redoSql);
             return;
         }
 
@@ -107,9 +111,30 @@ public final class TransactionalBuffer {
         metrics.ifPresent(m -> m.setLagFromTheSource(changeTime));
 
         // The transaction object is not a lightweight object anymore having all REDO_SQL stored.
-        // Another way to do it would be storing Map of SCN and Tuple of RAW_ID and TABLE_NAME as unique identifier of a DML
         Transaction transaction = transactions.get(transactionId);
         if (transaction != null) {
+
+            List<String> redoSqls = transaction.redoSqlMap.values().stream().flatMap(List::stream).collect(Collectors.toList());
+            if (redoSqls.contains(redoSql)) {
+                LOGGER.debug("Ignored duplicated capture as of SCN={}, REDO_SQL={}", scn, redoSql);
+                return;
+            }
+
+/*
+            if (transaction.redoSqlMap.get(scn) != null && transaction.redoSqlMap.get(scn).contains(redoSql)) {
+                LOGGER.trace("Ignored duplicated capture as of SCN={}, REDO_SQL={}", scn, redoSql);
+                return;
+            }
+
+            BigDecimal previousScn = transaction.redoSqlMap.floorKey(scn);
+            if (previousScn != null) {
+                if (transaction.redoSqlMap.get(previousScn) != null && transaction.redoSqlMap.get(previousScn).contains(redoSql)) {
+                    LOGGER.debug("Ignored duplicated capture for the previous SCN={}, REDO_SQL={}", scn, redoSql);
+                    return;
+                }
+            }
+*/
+
             transaction.commitCallbacks.add(callback);
             transaction.addRedoSql(scn, redoSql);
         }
@@ -143,7 +168,7 @@ public final class TransactionalBuffer {
         abandonedTransactionIds.remove(transactionId);
 
         List<CommitCallback> commitCallbacks = transaction.commitCallbacks;
-        LOGGER.trace("COMMIT, {}, smallest SCN: {}", debugMessage, smallestScn);
+        LOGGER.trace("COMMIT, {}, smallest SCN: {}, largest SCN {}", debugMessage, smallestScn, largestScn);
         executor.execute(() -> {
             try {
                 for (CommitCallback callback : commitCallbacks) {
@@ -295,18 +320,24 @@ public final class TransactionalBuffer {
         // this is SCN candidate, not actual COMMITTED_SCN
         private BigDecimal lastScn;
         private final List<CommitCallback> commitCallbacks;
-        private final List<String> redoSqls; // TODO delete after debugging
+        private final NavigableMap<BigDecimal, List<String>> redoSqlMap;
 
         private Transaction(BigDecimal firstScn) {
             this.firstScn = firstScn;
             this.commitCallbacks = new ArrayList<>();
-            this.redoSqls = new ArrayList<>();
+            this.redoSqlMap = new TreeMap<>();
             this.lastScn = firstScn;
         }
 
         private void addRedoSql(BigDecimal scn, String redoSql) {
             this.lastScn = scn;
-            this.redoSqls.add(redoSql);
+
+            List<String> sqlList = redoSqlMap.get(scn);
+            if (sqlList == null) {
+                redoSqlMap.put(scn, new ArrayList<>(Collections.singletonList(redoSql)));
+            } else {
+                sqlList.add(redoSql);
+            }
         }
 
         @Override
@@ -314,7 +345,7 @@ public final class TransactionalBuffer {
             return "Transaction{" +
                     "firstScn=" + firstScn +
                     ", lastScn=" + lastScn +
-                    ", redoSqls=" + Arrays.toString(redoSqls.toArray()) +
+                    ", redoSqls=" + Arrays.toString(redoSqlMap.values().toArray()) +
                     '}';
         }
     }

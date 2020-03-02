@@ -100,6 +100,11 @@ public class LogMinerQueryResultProcessor {
             String logMessage = String.format("transactionId = %s, SCN= %s, table_name= %s, segOwner= %s, operationCode=%s, offsetSCN= %s",
                     txId, scn, tableName, segOwner, operationCode, offsetContext.getScn());
 
+            if (scn == null) {
+                LOGGER.warn("Scn is null for {}", logMessage);
+                return 0;
+            }
+
             // Commit
             if (operationCode == RowMapper.COMMIT) {
                 if (transactionalBuffer.commit(txId, changeTime, context, logMessage)){
