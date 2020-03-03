@@ -195,6 +195,9 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     // we don't do it for other modes to save time on building data dictionary
 //                    if (strategy == OracleConnectorConfig.LogMiningStrategy.ONLINE_CATALOG) {
 //                        LogMinerHelper.endMining(connection);
+//                        LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
+//                        currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
+//                        LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
 //                    }
                 }
             } catch (Throwable e) {
