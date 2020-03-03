@@ -136,7 +136,15 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
             .withWidth(Width.MEDIUM)
             .withImportance(Importance.HIGH)
             .withDescription("A token to replace on snapshot predicate template");
-// todo continues_mine option
+
+    public static final Field DRIVER_TYPE = Field.create("database.driver.type")
+            .withDisplayName("oci for xStream or thin for LogMiner")
+            .withType(Type.STRING)
+            .withWidth(Width.SHORT)
+            .withImportance(Importance.HIGH)
+            .withDefault("oci")
+            .withDescription("A token to use in connection factories");
+
     /**
      * The set of {@link Field}s defined as part of this configuration.
      */
@@ -163,7 +171,8 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
             SCHEMA_NAME,
             CONNECTOR_ADAPTER,
             LOG_MINING_STRATEGY,
-            SNAPSHOT_ENHANCEMENT_TOKEN
+            SNAPSHOT_ENHANCEMENT_TOKEN,
+            DRIVER_TYPE
     );
 
     private final String databaseName;
@@ -202,7 +211,7 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
         );
         Field.group(config, "Connector", CommonConnectorConfig.POLL_INTERVAL_MS, CommonConnectorConfig.MAX_BATCH_SIZE,
                 CommonConnectorConfig.MAX_QUEUE_SIZE, CommonConnectorConfig.SNAPSHOT_DELAY_MS, CommonConnectorConfig.SNAPSHOT_FETCH_SIZE,
-                SNAPSHOT_SKIP_LOCKS, SNAPSHOT_ENHANCEMENT_TOKEN
+                SNAPSHOT_SKIP_LOCKS, SNAPSHOT_ENHANCEMENT_TOKEN, DRIVER_TYPE
                 );
 
         return config;

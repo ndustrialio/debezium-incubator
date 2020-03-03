@@ -39,6 +39,7 @@ public class TransactionalBufferTest {
     private static final String MESSAGE = "OK";
     private static final BigDecimal SCN = BigDecimal.ONE;
     private static final BigDecimal OTHER_SCN = BigDecimal.TEN;
+    private static final BigDecimal LARGEST_SCN = BigDecimal.valueOf(100L);
     private static final Timestamp TIMESTAMP = new Timestamp(System.currentTimeMillis());
 
     private ErrorHandler errorHandler;
@@ -106,7 +107,7 @@ public class TransactionalBufferTest {
         });
         transactionalBuffer.commit(TRANSACTION_ID, TIMESTAMP, () -> true, MESSAGE);
         commitLatch.await();
-        assertThat(smallestScnContainer.get()).isNull();
+        assertThat(smallestScnContainer.get()).isEqualTo(SCN);
     }
 
     @Test
@@ -120,7 +121,7 @@ public class TransactionalBufferTest {
         transactionalBuffer.registerCommitCallback(OTHER_TRANSACTION_ID, OTHER_SCN, Instant.now(), "", (timestamp, smallestScn) -> { });
         transactionalBuffer.commit(TRANSACTION_ID, TIMESTAMP, () -> true, MESSAGE);
         commitLatch.await();
-        assertThat(smallestScnContainer.get()).isEqualTo(OTHER_SCN);
+        assertThat(smallestScnContainer.get()).isEqualTo(SCN);
     }
 
     @Test
@@ -156,6 +157,43 @@ public class TransactionalBufferTest {
         transactionalBuffer.registerCommitCallback(OTHER_TRANSACTION_ID, OTHER_SCN, Instant.now(), SQL_TWO, (timestamp, smallestScn) -> {});
         assertThat(transactionalBuffer.toString()).contains(SQL_ONE);
         assertThat(transactionalBuffer.toString()).contains(SQL_TWO);
+    }
+
+    @Test
+    public void testDuplicatedRedoSql() {
+
+        assertThat(transactionalBuffer.getLargestScn().equals(BigDecimal.ZERO));
+
+        final String insertIntoATable = "insert into a table";
+        final String anotherInsertIntoATable = "another insert into a table";
+        final String duplicatedInsertIntoATable = "duplicated insert into a table";
+
+        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, SCN, Instant.now(), insertIntoATable, (timestamp, smallestScn) -> { });
+        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, OTHER_SCN, Instant.now(), anotherInsertIntoATable, (timestamp, smallestScn) -> { });
+        assertThat(transactionalBuffer.getLargestScn().equals(OTHER_SCN));
+        assertThat(transactionalBuffer.toString().contains(insertIntoATable));
+        assertThat(transactionalBuffer.toString().contains(anotherInsertIntoATable));
+        transactionalBuffer.rollback(TRANSACTION_ID, "");
+
+        // duplications are OK in different transactions
+        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, SCN, Instant.now(), duplicatedInsertIntoATable, (timestamp, smallestScn) -> { });
+        transactionalBuffer.registerCommitCallback(OTHER_TRANSACTION_ID, SCN, Instant.now(), duplicatedInsertIntoATable, (timestamp, smallestScn) -> { });
+        assertThat(transactionalBuffer.toString().indexOf(duplicatedInsertIntoATable) != transactionalBuffer.toString().lastIndexOf(duplicatedInsertIntoATable));
+        transactionalBuffer.rollback(TRANSACTION_ID, "");
+        transactionalBuffer.rollback(OTHER_TRANSACTION_ID, "");
+
+        // duplications are NOT OK in a transactions for different SCNs if they are sequential
+        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, SCN, Instant.now(), duplicatedInsertIntoATable, (timestamp, smallestScn) -> {});
+        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, OTHER_SCN, Instant.now(), duplicatedInsertIntoATable, (timestamp, smallestScn) -> {});
+        assertThat(transactionalBuffer.toString().indexOf(duplicatedInsertIntoATable) == transactionalBuffer.toString().lastIndexOf(duplicatedInsertIntoATable));
+        transactionalBuffer.rollback(TRANSACTION_ID, "");
+
+        // duplications are OK in a transactions for different SCNs if they are NOT sequential
+        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, SCN, Instant.now(), duplicatedInsertIntoATable, (timestamp, smallestScn) -> {});
+        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, OTHER_SCN, Instant.now(), insertIntoATable, (timestamp, smallestScn) -> {});
+        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, LARGEST_SCN, Instant.now(), duplicatedInsertIntoATable, (timestamp, smallestScn) -> {});
+        assertThat(transactionalBuffer.toString().indexOf(duplicatedInsertIntoATable) != transactionalBuffer.toString().lastIndexOf(duplicatedInsertIntoATable));
+        transactionalBuffer.rollback(TRANSACTION_ID, "");
     }
 
 }

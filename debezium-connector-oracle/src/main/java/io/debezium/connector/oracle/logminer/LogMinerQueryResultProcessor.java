@@ -100,23 +100,28 @@ public class LogMinerQueryResultProcessor {
             String logMessage = String.format("transactionId = %s, SCN= %s, table_name= %s, segOwner= %s, operationCode=%s, offsetSCN= %s",
                     txId, scn, tableName, segOwner, operationCode, offsetContext.getScn());
 
+            if (scn == null) {
+                LOGGER.warn("Scn is null for {}", logMessage);
+                return 0;
+            }
+
             // Commit
             if (operationCode == RowMapper.COMMIT) {
-                LOGGER.trace("COMMIT, {}", logMessage);
                 if (transactionalBuffer.commit(txId, changeTime, context, logMessage)){
+                    LOGGER.trace("COMMIT, {}", logMessage);
                     commitCounter++;
+                    cumulativeCommitTime = cumulativeCommitTime.plus(Duration.between(iterationStart, Instant.now()));
                 }
-                cumulativeCommitTime = cumulativeCommitTime.plus(Duration.between(iterationStart, Instant.now()));
                 continue;
             }
 
             //Rollback
             if (operationCode == RowMapper.ROLLBACK) {
-                LOGGER.trace("ROLLBACK, {}", logMessage);
                 if (transactionalBuffer.rollback(txId, logMessage)){
+                    LOGGER.trace("ROLLBACK, {}", logMessage);
                     rollbackCounter++;
+                    cumulativeRollbackTime = cumulativeRollbackTime.plus(Duration.between(iterationStart, Instant.now()));
                 }
-                cumulativeRollbackTime = cumulativeRollbackTime.plus(Duration.between(iterationStart, Instant.now()));
                 continue;
             }
 
@@ -125,6 +130,12 @@ public class LogMinerQueryResultProcessor {
                 LOGGER.debug("DDL,  {}", logMessage);
                 continue;
                 // todo parse, add to the collection.
+            }
+
+            // MISSING_SCN
+            if (operationCode == RowMapper.MISSING_SCN) {
+                LOGGER.warn("Missing SCN,  {}", logMessage);
+                continue;
             }
 
             // DML
@@ -156,6 +167,7 @@ public class LogMinerQueryResultProcessor {
                         // update SCN in offset context only if processed SCN less than SCN among other transactions
                         if (smallestScn == null || scn.compareTo(smallestScn) < 0) {
                             offsetContext.setScn(scn.longValue());
+                            transactionalBufferMetrics.setOldestScn(scn.longValue());
                         }
                         offsetContext.setTransactionId(txId);
                         offsetContext.setSourceTime(timestamp.toInstant());

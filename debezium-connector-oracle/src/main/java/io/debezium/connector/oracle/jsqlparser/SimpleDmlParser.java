@@ -198,6 +198,9 @@ public class SimpleDmlParser {
 
     private void parseDelete(Tables tables, Delete st) {
         initColumns(tables, ParserUtils.stripeQuotes(st.getTable().getName()));
+        Alias alias = st.getTable().getAlias();
+        aliasName = alias == null ? "" : alias.getName().trim();
+
         newColumnValues.clear();
 
         Expression where = st.getWhere();
