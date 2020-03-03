@@ -40,11 +40,13 @@ public class SqlServerSnapshotChangeEventSource extends HistorizedRelationalSnap
 
     private final SqlServerConnectorConfig connectorConfig;
     private final SqlServerConnection jdbcConnection;
+   private final SqlServerDatabaseSchema sqlServerDatabaseSchema;
 
     public SqlServerSnapshotChangeEventSource(SqlServerConnectorConfig connectorConfig, SqlServerOffsetContext previousOffset, SqlServerConnection jdbcConnection, SqlServerDatabaseSchema schema, EventDispatcher<TableId> dispatcher, Clock clock, SnapshotProgressListener snapshotProgressListener) {
         super(connectorConfig, previousOffset, jdbcConnection, schema, dispatcher, clock, snapshotProgressListener);
         this.connectorConfig = connectorConfig;
         this.jdbcConnection = jdbcConnection;
+        this.sqlServerDatabaseSchema = schema;
     }
 
     @Override
@@ -172,7 +174,7 @@ public class SqlServerSnapshotChangeEventSource extends HistorizedRelationalSnap
                     snapshotContext.catalogName,
                     schema,
                     connectorConfig.getTableFilters().dataCollectionFilter(),
-                    null,
+                    connectorConfig.getColumnFilter(),
                     false
             );
         }
@@ -202,6 +204,13 @@ public class SqlServerSnapshotChangeEventSource extends HistorizedRelationalSnap
      */
     @Override
     protected String getSnapshotSelect(SnapshotContext snapshotContext, TableId tableId) {
+        String blackListColumnStr = connectorConfig.getConfig().getString(connectorConfig.COLUMN_BLACKLIST);
+        if (blackListColumnStr != null && blackListColumnStr.trim().length() > 0
+                && blackListColumnStr.contains(tableId.table())) {
+            Table table = sqlServerDatabaseSchema.tableFor(tableId);
+            String columnStr = table.retrieveColumnNames().stream().collect(Collectors.joining(","));
+            return String.format("SELECT %s FROM [%s].[%s]", columnStr, tableId.schema(), tableId.table());
+        }
         return String.format("SELECT * FROM [%s].[%s]", tableId.schema(), tableId.table());
     }
 
