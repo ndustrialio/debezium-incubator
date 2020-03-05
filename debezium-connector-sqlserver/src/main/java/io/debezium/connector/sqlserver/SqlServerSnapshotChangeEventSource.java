@@ -226,7 +226,16 @@ public class SqlServerSnapshotChangeEventSource extends HistorizedRelationalSnap
         if (blackListColumnStr != null && blackListColumnStr.trim().length() > 0
                 && blackListColumnStr.contains(tableId.table())) {
             Table table = sqlServerDatabaseSchema.tableFor(tableId);
-            modifiedColumns = table.retrieveColumnNames().stream().collect(Collectors.joining(","));
+            modifiedColumns = table.retrieveColumnNames().stream()
+                    .map(s->{
+                        StringBuilder sb = new StringBuilder();
+                        if (!s.contains(tableId.table())){
+                            sb.append(tableId.table()).append(".").append(s);
+                        } else {
+                            sb.append(s);
+                        }
+                        return sb.toString();
+                    }).collect(Collectors.joining(","));
         }
         return modifiedColumns;
     }
