@@ -419,7 +419,7 @@ public abstract class HistorizedRelationalSnapshotChangeEventSource implements S
             overriddenSelect = connectorConfig.getSnapshotSelectOverridesByTable().get(new TableId(null, tableId.schema(), tableId.table()));
         }
 
-        return overriddenSelect != null ? enhanceOverriddenSelect(snapshotContext, overriddenSelect) :
+        return overriddenSelect != null ? enhanceOverriddenSelect(snapshotContext, overriddenSelect, tableId) :
                 getSnapshotSelect(snapshotContext, tableId);
     }
 
@@ -429,7 +429,7 @@ public abstract class HistorizedRelationalSnapshotChangeEventSource implements S
      * @param overriddenSelect conditional snapshot select
      * @return enhanced select statement. By default it just returns original select statements.
      */
-    protected String enhanceOverriddenSelect(SnapshotContext snapshotContext, String overriddenSelect){
+    protected String enhanceOverriddenSelect(SnapshotContext snapshotContext, String overriddenSelect, TableId tableId){
         return overriddenSelect;
     }
 

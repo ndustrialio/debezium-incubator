@@ -204,14 +204,31 @@ public class SqlServerSnapshotChangeEventSource extends HistorizedRelationalSnap
      */
     @Override
     protected String getSnapshotSelect(SnapshotContext snapshotContext, TableId tableId) {
+        String modifiedColumns = checkBlacklistedColumns(tableId);
+        if (modifiedColumns != null){
+            return String.format("SELECT %s FROM [%s].[%s]", modifiedColumns, tableId.schema(), tableId.table());
+        }
+        return String.format("SELECT * FROM [%s].[%s]", tableId.schema(), tableId.table());
+    }
+
+    @Override
+    protected String enhanceOverriddenSelect(SnapshotContext snapshotContext, String overriddenSelect, TableId tableId){
+        String modifiedColumns = checkBlacklistedColumns(tableId);
+        if (modifiedColumns != null){
+            overriddenSelect = overriddenSelect.replaceAll("\\*", modifiedColumns);
+        }
+        return overriddenSelect;
+    }
+
+    private String checkBlacklistedColumns(TableId tableId){
+        String modifiedColumns = null;
         String blackListColumnStr = connectorConfig.getConfig().getString(connectorConfig.COLUMN_BLACKLIST);
         if (blackListColumnStr != null && blackListColumnStr.trim().length() > 0
                 && blackListColumnStr.contains(tableId.table())) {
             Table table = sqlServerDatabaseSchema.tableFor(tableId);
-            String columnStr = table.retrieveColumnNames().stream().collect(Collectors.joining(","));
-            return String.format("SELECT %s FROM [%s].[%s]", columnStr, tableId.schema(), tableId.table());
+            modifiedColumns = table.retrieveColumnNames().stream().collect(Collectors.joining(","));
         }
-        return String.format("SELECT * FROM [%s].[%s]", tableId.schema(), tableId.table());
+        return modifiedColumns;
     }
 
     @Override

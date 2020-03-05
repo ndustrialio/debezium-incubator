@@ -231,7 +231,7 @@ public class TableSchemaBuilder {
                     .collect(Collectors.toList());
             int[] recordIndexes = indexesForColumns(columnsThatShouldBeAdded);
             Field[] fields = fieldsForColumns(schema, columnsThatShouldBeAdded);
-            int numFields = recordIndexes.length;
+            int numFields = columnsThatShouldBeAdded.size();
             ValueConverter[] converters = convertersForColumns(schema, tableId, columnsThatShouldBeAdded, filter, mappers);
             return (row) -> {
                 Struct result = new Struct(schema);
