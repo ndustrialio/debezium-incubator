@@ -308,10 +308,6 @@ public class TableSchemaBuilder {
         for (int i = 0; i < columns.size(); i++) {
             Column column = columns.get(i);
 
-            if (filter != null && !filter.matches(tableId.catalog(), tableId.schema(), tableId.table(), column.name())) {
-                continue;
-            }
-
             ValueConverter converter = createValueConverterFor(column, schema.field(column.name()));
             converter = wrapInMappingConverterIfNeeded(mappers, tableId, column, converter);
 
