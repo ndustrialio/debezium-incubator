@@ -15,7 +15,6 @@ import io.debezium.util.Metronome;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.SocketException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -243,28 +242,33 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                         lastProcessedPosition = TxLogPosition.valueOf(currentMaxLsn);
                         // Terminate the transaction otherwise CDC could not be disabled for tables
                         dataConnection.rollback();
-                    } catch (SQLException e) {
-                        tablesSlot.set(processErrorFromChangeTableQuery(e, tablesSlot.get()));
-                        if (e.getCause() instanceof  SocketException) {
-                            LOGGER.warn("Exception while processing table " + tablesSlot.get(), e);
+                    } catch (Exception e) {
+                        LOGGER.warn("Exception while processing table ", e);
+                        try {
+                            if (e.getCause() instanceof  SQLException) {
+                                tablesSlot.set(processErrorFromChangeTableQuery((SQLException) e, tablesSlot.get()));
+                            }
                             dataConnection.close();
                             dataConnection.connection(false);
                             metadataConnection.close();
                             metadataConnection.connection(false);
-                        } else {
-                            // Terminate the transaction otherwise CDC could not be disabled for tables
-                            dataConnection.rollback();
+                        } catch (Exception ignore){
+                            LOGGER.warn(ignore.getMessage(), ignore);
                         }
                     }
-                } catch (SQLException e) {
-                    if (e.getCause() instanceof SocketException) {
-                        LOGGER.warn("Exception while fetching max LSN", e);
+                } catch (Exception e) {
+                    LOGGER.warn("Exception while fetching max LSN", e);
+                    try {
+                        //if (e.getCause() instanceof SocketException) {
                         dataConnection.close();
                         dataConnection.connection(false);
                         metadataConnection.close();
                         metadataConnection.connection(false);
-                    } else {
-                        throw e;
+                        //} else {
+                        //    throw e;
+                        //}
+                    } catch (Exception ignore){
+                        LOGGER.warn(ignore.getMessage(), ignore);
                     }
                 }
             }
