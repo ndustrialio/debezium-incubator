@@ -53,8 +53,12 @@ public class LogMinerColumnValueImpl implements LogMinerColumnValue {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         LogMinerColumnValueImpl that = (LogMinerColumnValueImpl) o;
         return columnType == that.columnType &&
                 Objects.equals(columnName, that.columnName) &&
