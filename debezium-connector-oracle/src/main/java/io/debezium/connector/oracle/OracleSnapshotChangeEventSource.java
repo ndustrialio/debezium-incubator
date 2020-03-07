@@ -26,6 +26,9 @@ import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.sql.Statement;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -209,15 +212,17 @@ public class OracleSnapshotChangeEventSource extends HistorizedRelationalSnapsho
                     snapshotContext.tables,
                     snapshotContext.catalogName,
                     schema,
-                    null,
+                    connectorConfig.getColumnFilter(),
                     false,
                     snapshotContext.capturedTables
             );
         }
     }
 
-    //@Override // todo uncomment Override when we submit a PR to the core to implement conditional snapshot with "as of scn"
-    protected String enhanceOverriddenSelect(SnapshotContext snapshotContext, String overriddenSelect){
+    @Override
+    protected String enhanceOverriddenSelect(SnapshotContext snapshotContext, String overriddenSelect, TableId tableId){
+        String columnString = buildSelectColumns(connectorConfig.getConfig().getString(connectorConfig.COLUMN_BLACKLIST), snapshotContext.tables.forTable(tableId));
+        overriddenSelect = overriddenSelect.replaceFirst("\\*", columnString);
         long snapshotOffset = (Long) snapshotContext.offset.getOffset().get("scn");
         String token = connectorConfig.getTokenToReplaceInSnapshotPredicate();
         if (token != null){
@@ -245,8 +250,39 @@ public class OracleSnapshotChangeEventSource extends HistorizedRelationalSnapsho
 
     @Override
     protected String getSnapshotSelect(SnapshotContext snapshotContext, TableId tableId) {
+        String columnString = buildSelectColumns(connectorConfig.getConfig().getString(connectorConfig.COLUMN_BLACKLIST), snapshotContext.tables.forTable(tableId));
+
         long snapshotOffset = (Long) snapshotContext.offset.getOffset().get("scn");
-        return "SELECT * FROM " + tableId.schema() + "." + tableId.table() + " AS OF SCN " + snapshotOffset;
+        return "SELECT " + columnString + " FROM " + tableId.schema() + "." + tableId.table() + " AS OF SCN " + snapshotOffset;
+    }
+
+    /**
+     * This is to build "whitelisted" column list
+     * @param blackListColumnStr comma separated columns blacklist
+     * @param table the table
+     * @return column list for select
+     */
+    public static String buildSelectColumns(String blackListColumnStr, Table table) {
+        String columnsToSelect = "*";
+        if (blackListColumnStr != null && blackListColumnStr.trim().length() > 0
+                && blackListColumnStr.toUpperCase().contains(table.id().table())) {
+            String allTableColumns = table.retrieveColumnNames().stream()
+                    .map(columnName -> {
+                        StringBuilder sb = new StringBuilder();
+                        if (!columnName.contains(table.id().table())){
+                            sb.append(table.id().table()).append(".").append(columnName);
+                        } else {
+                            sb.append(columnName);
+                        }
+                        return sb.toString();
+                    }).collect(Collectors.joining(","));
+            String catalog = table.id().catalog();
+            List<String> blackList = new ArrayList<>(Arrays.asList(blackListColumnStr.trim().toUpperCase().replaceAll(catalog + ".", "").split(",")));
+            List<String> allColumns = new ArrayList<>(Arrays.asList(allTableColumns.toUpperCase().split(",")));
+            allColumns.removeAll(blackList);
+            columnsToSelect = String.join(",", allColumns);
+        }
+        return columnsToSelect;
     }
 
     @Override
