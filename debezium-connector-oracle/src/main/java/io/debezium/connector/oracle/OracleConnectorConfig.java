@@ -14,11 +14,14 @@ import io.debezium.connector.SourceInfoStructMaker;
 import io.debezium.connector.oracle.xstream.LcrPosition;
 import io.debezium.connector.oracle.xstream.OracleVersion;
 import io.debezium.document.Document;
+import io.debezium.function.Predicates;
 import io.debezium.heartbeat.Heartbeat;
 import io.debezium.jdbc.JdbcConfiguration;
+import io.debezium.relational.ColumnId;
 import io.debezium.relational.HistorizedRelationalDatabaseConnectorConfig;
 import io.debezium.relational.RelationalDatabaseConnectorConfig;
 import io.debezium.relational.TableId;
+import io.debezium.relational.Tables;
 import io.debezium.relational.Tables.TableFilter;
 import io.debezium.relational.history.HistoryRecordComparator;
 import io.debezium.relational.history.KafkaDatabaseHistory;
@@ -26,6 +29,8 @@ import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigDef.Importance;
 import org.apache.kafka.common.config.ConfigDef.Type;
 import org.apache.kafka.common.config.ConfigDef.Width;
+
+import java.util.function.Predicate;
 
 /**
  * Connector configuration for Oracle.
@@ -183,18 +188,40 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
     private final boolean tablenameCaseInsensitive;
     private final OracleVersion oracleVersion;
     private final String schemaName;
+    private final Tables.ColumnNameFilter columnFilter;
 
     public OracleConnectorConfig(Configuration config) {
         super(config, config.getString(SERVER_NAME), new SystemTablesPredicate());
 
-        this.databaseName = config.getString(DATABASE_NAME);
-        this.pdbName = config.getString(PDB_NAME);
+        this.databaseName = setUpperCase(config.getString(DATABASE_NAME));
+        this.pdbName = setUpperCase(config.getString(PDB_NAME));
         this.xoutServerName = config.getString(XSTREAM_SERVER_NAME);
         this.snapshotMode = SnapshotMode.parse(config.getString(SNAPSHOT_MODE));
         this.tablenameCaseInsensitive = config.getBoolean(TABLENAME_CASE_INSENSITIVE);
         this.oracleVersion = OracleVersion.parse(config.getString(ORACLE_VERSION));
-        this.schemaName = config.getString(SCHEMA_NAME);
+        this.schemaName = setUpperCase(config.getString(SCHEMA_NAME));
+        String blacklistedColumns = setUpperCase(config.getString(RelationalDatabaseConnectorConfig.COLUMN_BLACKLIST));
+        this.columnFilter = getColumnNameFilter(blacklistedColumns);
     }
+
+    private String setUpperCase(String property) {
+        property = property == null ? null : property.toUpperCase();
+        return property;
+    }
+
+    protected Tables.ColumnNameFilter getColumnNameFilter(String excludedColumnPatterns) {
+        return new Tables.ColumnNameFilter() {
+
+            Predicate<ColumnId> delegate = Predicates.excludes(excludedColumnPatterns, ColumnId::toString);
+
+            @Override
+            public boolean matches(String catalogName, String schemaName, String tableName, String columnName) {
+                // ignore database name and schema name, we are supposed to capture from one database and one schema
+                return delegate.test(new ColumnId(new TableId(null, null, tableName), columnName));
+            }
+        };
+    }
+
 
     public static ConfigDef configDef() {
         ConfigDef config = new ConfigDef();
@@ -206,6 +233,7 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
                 KafkaDatabaseHistory.RECOVERY_POLL_INTERVAL_MS, HistorizedRelationalDatabaseConnectorConfig.DATABASE_HISTORY);
         Field.group(config, "Events", RelationalDatabaseConnectorConfig.TABLE_WHITELIST,
                 RelationalDatabaseConnectorConfig.TABLE_BLACKLIST,
+                RelationalDatabaseConnectorConfig.COLUMN_BLACKLIST,
                 RelationalDatabaseConnectorConfig.TABLE_IGNORE_BUILTIN,
                 Heartbeat.HEARTBEAT_INTERVAL, Heartbeat.HEARTBEAT_TOPICS_PREFIX
         );
@@ -243,6 +271,10 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
 
     public String getSchemaName(){
         return schemaName;
+    }
+
+    public Tables.ColumnNameFilter getColumnFilter() {
+        return columnFilter;
     }
 
     @Override

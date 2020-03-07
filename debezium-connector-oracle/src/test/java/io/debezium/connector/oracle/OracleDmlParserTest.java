@@ -201,6 +201,25 @@ public class OracleDmlParserTest {
         record = sqlDmlParser.getDmlChange();
     }
 
+    @Test
+    public void shouldParseUpdateNoChangesTable() throws Exception {
+
+        String createStatement = IoUtil.read(IoUtil.getResourceAsStream("ddl/create_table.sql", null, getClass(), null, null));
+        ddlParser.parse(createStatement, tables);
+
+        String dml = "update \"" + FULL_TABLE_NAME + "\" set \"col1\" = '6', col2 = 'text', col3 = 'text', col4 = NULL " +
+                "where ID = 5 and COL1 = 6 and \"COL2\" = 'text' " +
+                "and COL3 = 'text' and COL4 IS NULL and \"COL5\" IS NULL and COL6 IS NULL and COL7 IS NULL and COL9 IS NULL and COL10 IS NULL and COL12 IS NULL " +
+                "and COL8 = TO_TIMESTAMP('2019-05-14 02:28:32') and col11 = " + SPATIAL_DATA + ";";
+
+        sqlDmlParser.parse(dml, tables, "");
+        LogMinerRowLcr record = sqlDmlParser.getDmlChange();
+        boolean pass = record.getCommandType().equals(Envelope.Operation.UPDATE)
+                && record.getOldValues().size() == record.getNewValues().size()
+                && record.getNewValues().containsAll(record.getOldValues());
+        assertThat(pass);
+    }
+
     private void verifyUpdate(LogMinerRowLcr record, boolean checkGeometry, boolean checkOldValues, int oldValuesNumber) {
         // validate
         assertThat(record.getCommandType()).isEqualTo(Envelope.Operation.UPDATE);

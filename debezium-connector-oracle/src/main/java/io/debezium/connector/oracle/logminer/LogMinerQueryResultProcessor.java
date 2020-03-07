@@ -9,6 +9,7 @@ import io.debezium.connector.oracle.OracleDatabaseSchema;
 import io.debezium.connector.oracle.OracleOffsetContext;
 import io.debezium.connector.oracle.jsqlparser.SimpleDmlParser;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
+import io.debezium.data.Envelope;
 import io.debezium.pipeline.EventDispatcher;
 import io.debezium.pipeline.source.spi.ChangeEventSource;
 import io.debezium.relational.Table;
@@ -154,6 +155,16 @@ public class LogMinerQueryResultProcessor {
                     LOGGER.error("Following statement was not parsed: {}, details: {}", redo_sql, logMessage);
                     continue;
                 }
+
+                // this will happen for instance on a blacklisted column change, we will omit this update
+                if (rowLcr.getCommandType().equals(Envelope.Operation.UPDATE)
+                        && rowLcr.getOldValues().size() == rowLcr.getNewValues().size()
+                        && rowLcr.getNewValues().containsAll(rowLcr.getOldValues())) {
+                    LOGGER.trace("Following DML was skipped, " +
+                            "most likely because of ignored blacklisted column change: {}, details: {}", redo_sql, logMessage);
+                    continue;
+                }
+
                 rowLcr.setObjectOwner(segOwner);
                 rowLcr.setSourceTime(changeTime);
                 rowLcr.setTransactionId(txId);

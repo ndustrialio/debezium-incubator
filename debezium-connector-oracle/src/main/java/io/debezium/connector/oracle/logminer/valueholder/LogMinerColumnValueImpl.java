@@ -5,6 +5,8 @@
  */
 package io.debezium.connector.oracle.logminer.valueholder;
 
+import java.util.Objects;
+
 /**
  * This class mimics the API of oracle.streams.DefaultColumnValue implementation
  *
@@ -47,5 +49,20 @@ public class LogMinerColumnValueImpl implements LogMinerColumnValue {
                 ", columnData=" + columnData +
                 ", columnType=" + columnType +
                 '}';
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        LogMinerColumnValueImpl that = (LogMinerColumnValueImpl) o;
+        return columnType == that.columnType &&
+                Objects.equals(columnName, that.columnName) &&
+                Objects.equals(columnData, that.columnData);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(columnName, columnData, columnType);
     }
 }
