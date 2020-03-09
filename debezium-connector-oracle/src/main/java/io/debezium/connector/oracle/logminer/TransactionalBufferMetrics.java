@@ -33,6 +33,7 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     private AtomicReference<Duration> minLagFromTheSource = new AtomicReference<>();
     private AtomicReference<Duration> totalLagsFromTheSource = new AtomicReference<>();
     private AtomicReference<Set<String>> abandonedTransactionIds = new AtomicReference<>();
+    private AtomicReference<Set<String>> rolledBackTransactionIds = new AtomicReference<>();
     private Instant startTime;
     private static long MILLIS_PER_SECOND = 1000L;
 
@@ -41,16 +42,7 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         startTime = Instant.now();
         oldestScn.set(-1);
         lagFromTheSource.set(Duration.ZERO);
-        maxLagFromTheSource.set(Duration.ZERO);
-        minLagFromTheSource.set(Duration.ZERO);
-        totalLagsFromTheSource.set(Duration.ZERO);
-        activeTransactions.set(0);
-        rolledBackTransactions.set(0);
-        committedTransactions.set(0);
-        capturedDmlCounter.set(0);
-        committedDmlCounter.set(0);
-        totalLagsFromTheSource.set(Duration.ZERO);
-        abandonedTransactionIds.set(new HashSet<>());
+        reset();
     }
 
     // setters
@@ -101,6 +93,12 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     void addAbandonedTransactionId(String transactionId){
         if (transactionId != null) {
             abandonedTransactionIds.get().add(transactionId);
+        }
+    }
+
+    void addRolledBackTransactionId(String transactionId){
+        if (transactionId != null) {
+            rolledBackTransactionIds.get().add(transactionId);
         }
     }
 
@@ -158,6 +156,26 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     @Override
     public Set<String> getAbandonedTransactionIds() {
         return abandonedTransactionIds.get();
+    }
+
+    @Override
+    public Set<String> getRolledBackTransactionIds() {
+        return rolledBackTransactionIds.get();
+    }
+
+    @Override
+    public void reset() {
+        maxLagFromTheSource.set(Duration.ZERO);
+        minLagFromTheSource.set(Duration.ZERO);
+        totalLagsFromTheSource.set(Duration.ZERO);
+        activeTransactions.set(0);
+        rolledBackTransactions.set(0);
+        committedTransactions.set(0);
+        capturedDmlCounter.set(0);
+        committedDmlCounter.set(0);
+        totalLagsFromTheSource.set(Duration.ZERO);
+        abandonedTransactionIds.set(new HashSet<>());
+        rolledBackTransactionIds.set(new HashSet<>());
     }
 
     @Override

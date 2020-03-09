@@ -85,4 +85,14 @@ public interface TransactionalBufferMetricsMXBean {
      */
     Set<String> getAbandonedTransactionIds();
 
+    /**
+     * See which transactions were rolled back
+     * @return set of transaction IDs
+     */
+    Set<String> getRolledBackTransactionIds();
+
+    /**
+     * action to reset some metrics
+     */
+    void reset();
 }
