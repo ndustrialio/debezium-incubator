@@ -51,6 +51,8 @@ public final class TransactionalBuffer {
     private final ErrorHandler errorHandler;
     private Optional<TransactionalBufferMetrics> metrics;
     private final Set<String> abandonedTransactionIds;
+    // storing rolledBackTransactionIds is for debugging purposes to check what was rolled back to research, todo delete in future releases
+    private final Set<String> rolledBackTransactionIds;
     private BigDecimal largestScn;
 
     /**
@@ -72,6 +74,7 @@ public final class TransactionalBuffer {
         }
         largestScn = BigDecimal.ZERO;
         this.abandonedTransactionIds = new HashSet<>();
+        this.rolledBackTransactionIds = new HashSet<>();
     }
 
     /**
@@ -114,26 +117,25 @@ public final class TransactionalBuffer {
         Transaction transaction = transactions.get(transactionId);
         if (transaction != null) {
 
+            // todo this should never happen, delete when tested and confirmed
+            if (rolledBackTransactionIds.contains(transactionId)) {
+                LOGGER.debug("Ignore DML for rolled back transaction: SCN={}, REDO_SQL={}", scn, redoSql);
+                return;
+            }
+
             List<String> redoSqls = transaction.redoSqlMap.values().stream().flatMap(List::stream).collect(Collectors.toList());
             if (redoSqls.contains(redoSql)) {
                 LOGGER.debug("Ignored duplicated capture as of SCN={}, REDO_SQL={}", scn, redoSql);
                 return;
             }
 
-/*
-            if (transaction.redoSqlMap.get(scn) != null && transaction.redoSqlMap.get(scn).contains(redoSql)) {
-                LOGGER.trace("Ignored duplicated capture as of SCN={}, REDO_SQL={}", scn, redoSql);
-                return;
-            }
-
-            BigDecimal previousScn = transaction.redoSqlMap.floorKey(scn);
-            if (previousScn != null) {
-                if (transaction.redoSqlMap.get(previousScn) != null && transaction.redoSqlMap.get(previousScn).contains(redoSql)) {
-                    LOGGER.debug("Ignored duplicated capture for the previous SCN={}, REDO_SQL={}", scn, redoSql);
-                    return;
-                }
-            }
-*/
+//            BigDecimal previousScn = transaction.redoSqlMap.floorKey(scn);
+//            if (previousScn != null) {
+//                if (transaction.redoSqlMap.get(previousScn) != null && transaction.redoSqlMap.get(previousScn).contains(redoSql)) {
+//                    LOGGER.debug("Ignored duplicated capture for the previous SCN={}, REDO_SQL={}", scn, redoSql);
+//                    return;
+//                }
+//            }
 
             transaction.commitCallbacks.add(callback);
             transaction.addRedoSql(scn, redoSql);
@@ -260,9 +262,15 @@ public final class TransactionalBuffer {
         if (transaction != null) {
             LOGGER.debug("Transaction {} rolled back", transactionId, debugMessage);
             abandonedTransactionIds.remove(transactionId);
+            rolledBackTransactionIds.add(transactionId);
+
             metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
             metrics.ifPresent(TransactionalBufferMetrics::incrementRolledBackTransactions);
+            metrics.ifPresent(m -> m.addRolledBackTransactionId(transactionId));
+
             calculateSmallestScn();
+            calculateLargestScn();
+
             return true;
         }
         return false;
