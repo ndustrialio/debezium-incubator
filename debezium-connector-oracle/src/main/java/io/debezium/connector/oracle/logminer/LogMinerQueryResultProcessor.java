@@ -128,7 +128,7 @@ public class LogMinerQueryResultProcessor {
 
             // DDL
             if (operationCode == RowMapper.DDL) {
-                LOGGER.debug("DDL,  {}", logMessage);
+                LOGGER.debug("DDL: {}, REDO_SQL {}", logMessage, redo_sql);
                 continue;
                 // todo parse, add to the collection.
             }

@@ -82,6 +82,7 @@ public final class TransactionalBuffer {
      * @return largest last SCN in the buffer among all transactions
      */
     public BigDecimal getLargestScn() {
+        calculateLargestScn();
         return largestScn;
     }
 

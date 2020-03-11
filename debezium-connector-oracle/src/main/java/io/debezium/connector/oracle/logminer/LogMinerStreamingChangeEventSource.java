@@ -153,8 +153,9 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                             Optional<Long> oldestScnToAbandonTransactions = LogMinerHelper.getLastScnFromTheOldestOnlineRedo(connection, offsetContext.getScn());
                             oldestScnToAbandonTransactions.ifPresent(nextOldestScn -> {
                                 transactionalBuffer.abandonLongTransactions(nextOldestScn);
-                                offsetContext.setScn(nextOldestScn);
                                 LOGGER.debug("After abandoning, offset before: {}, offset after:{}", offsetContext.getScn(), nextOldestScn);
+                                offsetContext.setScn(nextOldestScn);
+                                lastProcessedScn = transactionalBuffer.getLargestScn().equals(BigDecimal.ZERO) ? nextScn : transactionalBuffer.getLargestScn().longValue();
                             });
 
                             LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
