@@ -108,7 +108,7 @@ public class RowMapper {
                 return rs.getString(SQL_REDO);
             } else {
                 result = new StringBuilder(rs.getString(SQL_REDO));
-                int lobLimit = 10000; // todo : decide on approach ( XStream chunk option) and Lob limit
+                int lobLimit = 40000; // todo : decide on approach ( XStream chunk option) and Lob limit
                 BigDecimal scn = getScn(rs);
                 while (csf == 1) {
                     rs.next();
