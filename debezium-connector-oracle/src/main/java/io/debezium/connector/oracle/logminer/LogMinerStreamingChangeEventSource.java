@@ -22,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -49,7 +50,6 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
 //    private final OracleDmlParser dmlParser;
     private final SimpleDmlParser dmlParser;
     private final String catalogName;
-    //private final int posVersion;
     private OracleConnectorConfig connectorConfig;
     private final TransactionalBufferMetrics transactionalBufferMetrics;
     private final LogMinerMetrics logMinerMetrics;
@@ -103,6 +103,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                                  queryLogMinerContents(connectorConfig.getSchemaName(), jdbcConnection.username(), schema, SqlUtils.LOGMNR_CONTENTS_VIEW))) {
 
                 lastProcessedScn = offsetContext.getScn();
+
                 long oldestScnInOnlineRedo = LogMinerHelper.getFirstOnlineLogScn(connection);
                 if (lastProcessedScn < oldestScnInOnlineRedo) {
                     throw new RuntimeException("Online REDO LOG files don't contain the offset SCN. Clean offset and start over");
@@ -152,8 +153,9 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                             Optional<Long> oldestScnToAbandonTransactions = LogMinerHelper.getLastScnFromTheOldestOnlineRedo(connection, offsetContext.getScn());
                             oldestScnToAbandonTransactions.ifPresent(nextOldestScn -> {
                                 transactionalBuffer.abandonLongTransactions(nextOldestScn);
-                                offsetContext.setScn(nextOldestScn);
                                 LOGGER.debug("After abandoning, offset before: {}, offset after:{}", offsetContext.getScn(), nextOldestScn);
+                                offsetContext.setScn(nextOldestScn);
+                                lastProcessedScn = transactionalBuffer.getLargestScn().equals(BigDecimal.ZERO) ? nextScn : transactionalBuffer.getLargestScn().longValue();
                             });
 
                             LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
@@ -179,13 +181,25 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                         metronome.pause();
                     }
 
+                    // get largest scn from the last uncommitted transaction and set as last processed scn
+                    LOGGER.trace("largest scn = {}", transactionalBuffer.getLargestScn());
+
+                    lastProcessedScn  = transactionalBuffer.getLargestScn().equals(BigDecimal.ZERO) ? nextScn : transactionalBuffer.getLargestScn().longValue();
+
                     // update SCN in offset context only if buffer is empty, otherwise we update offset in TransactionalBuffer
                     if (transactionalBuffer.isEmpty()) {
-                        offsetContext.setScn(nextScn);
+                        offsetContext.setScn(lastProcessedScn);
+                        transactionalBuffer.resetLargestScn();
                     }
-                    lastProcessedScn = nextScn;
 
                     res.close();
+                    // we don't do it for other modes to save time on building data dictionary
+//                    if (strategy == OracleConnectorConfig.LogMiningStrategy.ONLINE_CATALOG) {
+//                        LogMinerHelper.endMining(connection);
+//                        LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
+//                        currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
+//                        LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
+//                    }
                 }
             } catch (Throwable e) {
                 if (connectionProblem(e)) {

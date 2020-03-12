@@ -18,20 +18,25 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 /**
  * @author Andrey Pustovetov
- * 
+ * <p>
  * Transactional buffer is designed to register callbacks, to execute them when transaction commits and to clear them
  * when transaction rollbacks.
  */
@@ -46,14 +51,16 @@ public final class TransactionalBuffer {
     private final ErrorHandler errorHandler;
     private Optional<TransactionalBufferMetrics> metrics;
     private final Set<String> abandonedTransactionIds;
-
+    // storing rolledBackTransactionIds is for debugging purposes to check what was rolled back to research, todo delete in future releases
+    private final Set<String> rolledBackTransactionIds;
+    private BigDecimal largestScn;
 
     /**
      * Constructor to create a new instance.
      *
-     * @param logicalName logical name
+     * @param logicalName  logical name
      * @param errorHandler error handler
-     * @param metrics metrics MBean exposed
+     * @param metrics      metrics MBean exposed
      */
     TransactionalBuffer(String logicalName, ErrorHandler errorHandler, TransactionalBufferMetrics metrics) {
         this.transactions = new HashMap<>();
@@ -65,45 +72,98 @@ public final class TransactionalBuffer {
         } else {
             this.metrics = Optional.empty();
         }
+        largestScn = BigDecimal.ZERO;
         this.abandonedTransactionIds = new HashSet<>();
+        this.rolledBackTransactionIds = new HashSet<>();
+    }
+
+    /**
+     *
+     * @return largest last SCN in the buffer among all transactions
+     */
+    public BigDecimal getLargestScn() {
+        calculateLargestScn();
+        return largestScn;
+    }
+
+    /**
+     * Reset Largest SCNs
+     */
+    public void resetLargestScn() {
+        largestScn = BigDecimal.ZERO;
     }
 
     /**
      * Registers callback to execute when transaction commits.
      *
      * @param transactionId transaction identifier
-     * @param scn SCN
-     * @param changeTime time of DML parsing completion
-     * @param redoSql statement from redo
-     * @param callback callback to execute when transaction commits
+     * @param scn           SCN
+     * @param changeTime    time of DML parsing completion
+     * @param redoSql       statement from redo
+     * @param callback      callback to execute when transaction commits
      */
     void registerCommitCallback(String transactionId, BigDecimal scn, Instant changeTime, String redoSql, CommitCallback callback) {
         if (abandonedTransactionIds.contains(transactionId)) {
-            LOGGER.error("Another DML for an abandoned transaction {} : {}", transactionId, redoSql);
+            LOGGER.warn("Another DML for an abandoned transaction {} : {}, ignored", transactionId, redoSql);
             return;
         }
 
+        transactions.computeIfAbsent(transactionId, s -> new Transaction(scn));
+
+        metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
         metrics.ifPresent(TransactionalBufferMetrics::incrementCapturedDmlCounter);
         metrics.ifPresent(m -> m.setLagFromTheSource(changeTime));
 
-        transactions.computeIfAbsent(transactionId, s -> new Transaction(scn)).commitCallbacks.add(callback);
+        // The transaction object is not a lightweight object anymore having all REDO_SQL stored.
         Transaction transaction = transactions.get(transactionId);
         if (transaction != null) {
-            transaction.addRedoSql(redoSql);
+
+            // todo this should never happen, delete when tested and confirmed
+            if (rolledBackTransactionIds.contains(transactionId)) {
+                LOGGER.debug("Ignore DML for rolled back transaction: SCN={}, REDO_SQL={}", scn, redoSql);
+                return;
+            }
+
+            List<String> redoSqls = transaction.redoSqlMap.values().stream().flatMap(List::stream).collect(Collectors.toList());
+            if (redoSqls.contains(redoSql)) {
+                LOGGER.debug("Ignored duplicated capture as of SCN={}, REDO_SQL={}", scn, redoSql);
+                return;
+            }
+
+//            BigDecimal previousScn = transaction.redoSqlMap.floorKey(scn);
+//            if (previousScn != null) {
+//                if (transaction.redoSqlMap.get(previousScn) != null && transaction.redoSqlMap.get(previousScn).contains(redoSql)) {
+//                    LOGGER.debug("Ignored duplicated capture for the previous SCN={}, REDO_SQL={}", scn, redoSql);
+//                    return;
+//                }
+//            }
+
+            transaction.commitCallbacks.add(callback);
+            transaction.addRedoSql(scn, redoSql);
         }
-        metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
+
+        if (scn.compareTo(largestScn) > 0) {
+            largestScn = scn;
+        }
     }
 
     /**
      * @param transactionId transaction identifier
-     * @param timestamp commit timestamp
-     * @param context context to check that source is running
-     * @param debugMessage todo delete
+     * @param timestamp     commit timestamp
+     * @param context       context to check that source is running
+     * @param debugMessage  todo delete
      * @return true if committed transaction is in the buffer
      */
     boolean commit(String transactionId, Timestamp timestamp, ChangeEventSource.ChangeEventSourceContext context, String debugMessage) {
         BigDecimal smallestScn = calculateSmallestScn();
-        Transaction transaction = transactions.remove(transactionId);
+
+        Transaction transaction = transactions.get(transactionId);
+        if (transaction != null) {
+            transaction.lastScn = transaction.lastScn.add(BigDecimal.ONE);
+            calculateLargestScn();
+        }
+
+        transaction = transactions.remove(transactionId);
         if (transaction == null) {
             return false;
         }
@@ -111,7 +171,7 @@ public final class TransactionalBuffer {
         abandonedTransactionIds.remove(transactionId);
 
         List<CommitCallback> commitCallbacks = transaction.commitCallbacks;
-        LOGGER.trace("COMMIT, {}, smallest SCN: {}", debugMessage, smallestScn);
+        LOGGER.trace("COMMIT, {}, smallest SCN: {}, largest SCN {}", debugMessage, smallestScn, largestScn);
         executor.execute(() -> {
             try {
                 for (CommitCallback callback : commitCallbacks) {
@@ -121,20 +181,18 @@ public final class TransactionalBuffer {
                     callback.execute(timestamp, smallestScn);
                     metrics.ifPresent(TransactionalBufferMetrics::incrementCommittedTransactions);
                 }
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
                 LOGGER.error("Thread interrupted during running", e);
                 Thread.currentThread().interrupt();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 errorHandler.setProducerThrowable(e);
-            }
-            finally {
+            } finally {
                 taskCounter.decrementAndGet();
                 metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
                 metrics.ifPresent(m -> m.incrementCommittedDmlCounter(commitCallbacks.size()));
             }
         });
+
         return true;
     }
 
@@ -144,19 +202,19 @@ public final class TransactionalBuffer {
      * If that transaction was lasted for a long time, let say > 30 minutes, the offset will be not accessible after restart,
      * because we don't mine archived logs, neither rely on continuous_mine configuration option.
      * Hence we have to address these cases manually.
-     *
+     * <p>
      * It is limited by  following condition:
      * allOnlineRedoLogFiles.size() - currentlyMinedLogFiles.size() <= 1
-     *
+     * <p>
      * If each redo lasts for 10 minutes and 7 redo group have been configured, any transaction cannot lasts longer than 1 hour.
-     *
+     * <p>
      * In case of an abandonment, all DMLs/Commits/Rollbacs for this transaction will be ignored
-     *
+     * <p>
      * In other words connector will not send any part of this transaction to Kafka
+     *
      * @param thresholdScn the smallest SVN of any transaction to keep in the buffer. All others will be removed.
      */
-    // todo calculate smallest SCN as a new OffsetScn
-    void abandonLongTransactions(Long thresholdScn){
+    void abandonLongTransactions(Long thresholdScn) {
         BigDecimal threshold = new BigDecimal(thresholdScn);
         Iterator<Map.Entry<String, Transaction>> iter = transactions.entrySet().iterator();
         while (iter.hasNext()) {
@@ -165,6 +223,9 @@ public final class TransactionalBuffer {
                 LOGGER.warn("Following long running transaction will be abandoned and ignored: {} ", transaction.getValue().toString());
                 abandonedTransactionIds.add(transaction.getKey());
                 iter.remove();
+
+                calculateLargestScn();
+
                 metrics.ifPresent(t -> t.addAbandonedTransactionId(transaction.getKey()));
                 metrics.ifPresent(t -> t.decrementCapturedDmlCounter(transaction.getValue().commitCallbacks.size()));
                 metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
@@ -182,23 +243,41 @@ public final class TransactionalBuffer {
         return scn;
     }
 
+    private void calculateLargestScn() {
+        largestScn = transactions.isEmpty() ? BigDecimal.ZERO : transactions.values()
+                .stream()
+                .map(transaction -> transaction.lastScn)
+                .max(BigDecimal::compareTo)
+                .orElseThrow(() -> new DataException("Cannot calculate largest SCN"));
+    }
+
     /**
      * Clears registered callbacks for given transaction identifier.
      *
      * @param transactionId transaction id
-     * @param debugMessage todo delete in the future
+     * @param debugMessage  todo delete in the future
      * @return true if the rollback is for a transaction in the buffer
      */
     boolean rollback(String transactionId, String debugMessage) {
-        Transaction transaction = transactions.remove(transactionId);
+
+        Transaction transaction = transactions.get(transactionId);
         if (transaction != null) {
-            LOGGER.debug("Transaction {} rolled back", transactionId, debugMessage);
+            LOGGER.debug("Transaction {} rolled back, {}", transactionId, debugMessage);
+
+            transaction.lastScn = transaction.lastScn.add(BigDecimal.ONE);
+            calculateLargestScn();
+            calculateSmallestScn();
+
             abandonedTransactionIds.remove(transactionId);
+            rolledBackTransactionIds.add(transactionId);
+
             metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
             metrics.ifPresent(TransactionalBufferMetrics::incrementRolledBackTransactions);
-            calculateSmallestScn();
+            metrics.ifPresent(m -> m.addRolledBackTransactionId(transactionId));
             return true;
         }
+
+        transactions.remove(transactionId);
         return false;
     }
 
@@ -228,8 +307,7 @@ public final class TransactionalBuffer {
             if (!executor.awaitTermination(1000L, TimeUnit.MILLISECONDS)) {
                 executor.shutdownNow();
             }
-        }
-        catch (InterruptedException e) {
+        } catch (InterruptedException e) {
             LOGGER.error("Thread interrupted during shutdown", e);
         }
     }
@@ -242,7 +320,7 @@ public final class TransactionalBuffer {
         /**
          * Executes callback.
          *
-         * @param timestamp commit timestamp
+         * @param timestamp   commit timestamp
          * @param smallestScn smallest SCN among other transactions
          */
         void execute(Timestamp timestamp, BigDecimal smallestScn) throws InterruptedException;
@@ -252,24 +330,36 @@ public final class TransactionalBuffer {
     private static final class Transaction {
 
         private final BigDecimal firstScn;
+        // this is SCN candidate, not actual COMMITTED_SCN
+        private BigDecimal lastScn;
         private final List<CommitCallback> commitCallbacks;
-        private final List<String> redoSqls;
+        private final NavigableMap<BigDecimal, List<String>> redoSqlMap;
 
         private Transaction(BigDecimal firstScn) {
             this.firstScn = firstScn;
             this.commitCallbacks = new ArrayList<>();
-            this.redoSqls = new ArrayList<>();
+            this.redoSqlMap = new TreeMap<>();
+            this.lastScn = firstScn;
         }
 
-        private void addRedoSql(String redoSql){
-            redoSqls.add(redoSql);
+        private void addRedoSql(BigDecimal scn, String redoSql) {
+            this.lastScn = scn;
+
+            List<String> sqlList = redoSqlMap.get(scn);
+            if (sqlList == null) {
+                redoSqlMap.put(scn, new ArrayList<>(Collections.singletonList(redoSql)));
+            } else {
+                sqlList.add(redoSql);
+            }
         }
 
         @Override
         public String toString() {
-            StringBuilder result =  new StringBuilder("First SCN = " + firstScn + "\nRedo SQL:\n ");
-            redoSqls.forEach(sql -> result.append(sql).append("\n"));
-            return result.toString();
+            return "Transaction{" +
+                    "firstScn=" + firstScn +
+                    ", lastScn=" + lastScn +
+                    ", redoSqls=" + Arrays.toString(redoSqlMap.values().toArray()) +
+                    '}';
         }
     }
 }

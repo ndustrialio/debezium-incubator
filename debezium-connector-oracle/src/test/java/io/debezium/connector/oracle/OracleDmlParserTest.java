@@ -63,7 +63,7 @@ public class OracleDmlParserTest {
     }
 
     @Test
-    public void shouldParseAlias() throws Exception {
+    public void shouldParseAliasUpdate() throws Exception {
         String createStatement = IoUtil.read(IoUtil.getResourceAsStream("ddl/create_table.sql", null, getClass(), null, null));
         ddlParser.parse(createStatement, tables);
 
@@ -80,23 +80,35 @@ public class OracleDmlParserTest {
         sqlDmlParser.parse(dml, tables, "1");
         record = sqlDmlParser.getDmlChange();
         verifyUpdate(record, false, true, 9);
+    }
 
+    @Test
+    public void shouldParseAliasInsert() throws Exception {
+        String createStatement = IoUtil.read(IoUtil.getResourceAsStream("ddl/create_table.sql", null, getClass(), null, null));
+        ddlParser.parse(createStatement, tables);
 
-        dml = "insert into \"" + FULL_TABLE_NAME + "\" a (a.\"ID\",a.\"COL1\",a.\"COL2\",a.\"COL3\",a.\"COL4\",a.\"COL5\",a.\"COL6\",a.\"COL8\"," +
+        String dml = "insert into \"" + FULL_TABLE_NAME + "\" a (a.\"ID\",a.\"COL1\",a.\"COL2\",a.\"COL3\",a.\"COL4\",a.\"COL5\",a.\"COL6\",a.\"COL8\"," +
                 "a.\"COL9\",a.\"COL10\") values ('5','4','tExt','text',NULL,NULL,NULL,NULL,EMPTY_BLOB(),EMPTY_CLOB());";
         antlrDmlParser.parse(dml, tables);
-        record = antlrDmlParser.getDmlChange();
+        LogMinerRowLcr record = antlrDmlParser.getDmlChange();
         verifyInsert(record);
 
         sqlDmlParser.parse(dml, tables, "1");
         record = sqlDmlParser.getDmlChange();
         verifyInsert(record);
+    }
 
-        dml = "delete from \"" + FULL_TABLE_NAME +
-                "\" a where a.id = 6 and a.col1 = 2 and a.col2 = 'text' and a.col3 = 'tExt' and a.col4 is null and a.col5 is null " +
+    @Test
+    public void shouldParseAliasDelete() throws Exception {
+        String createStatement = IoUtil.read(IoUtil.getResourceAsStream("ddl/create_table.sql", null, getClass(), null, null));
+        ddlParser.parse(createStatement, tables);
+
+
+        String dml = "delete from \"" + FULL_TABLE_NAME +
+                "\" a where a.\"id\" = 6 and a.\"col1\" = 2 and a.\"col2\" = 'text' and a.col3 = 'tExt' and a.col4 is null and a.col5 is null " +
                 " and a.col6 is null and a.col8 is null and a.col9 is null and a.col10 is null and a.col11 is null and a.col12 is null";
         antlrDmlParser.parse(dml, tables);
-        record = antlrDmlParser.getDmlChange();
+        LogMinerRowLcr record = antlrDmlParser.getDmlChange();
         verifyDelete(record, true);
 
         sqlDmlParser.parse(dml, tables, "1");
@@ -187,6 +199,25 @@ public class OracleDmlParserTest {
 
         sqlDmlParser.parse(dml, tables, "");
         record = sqlDmlParser.getDmlChange();
+    }
+
+    @Test
+    public void shouldParseUpdateNoChangesTable() throws Exception {
+
+        String createStatement = IoUtil.read(IoUtil.getResourceAsStream("ddl/create_table.sql", null, getClass(), null, null));
+        ddlParser.parse(createStatement, tables);
+
+        String dml = "update \"" + FULL_TABLE_NAME + "\" set \"col1\" = '6', col2 = 'text', col3 = 'text', col4 = NULL " +
+                "where ID = 5 and COL1 = 6 and \"COL2\" = 'text' " +
+                "and COL3 = 'text' and COL4 IS NULL and \"COL5\" IS NULL and COL6 IS NULL and COL7 IS NULL and COL9 IS NULL and COL10 IS NULL and COL12 IS NULL " +
+                "and COL8 = TO_TIMESTAMP('2019-05-14 02:28:32') and col11 = " + SPATIAL_DATA + ";";
+
+        sqlDmlParser.parse(dml, tables, "");
+        LogMinerRowLcr record = sqlDmlParser.getDmlChange();
+        boolean pass = record.getCommandType().equals(Envelope.Operation.UPDATE)
+                && record.getOldValues().size() == record.getNewValues().size()
+                && record.getNewValues().containsAll(record.getOldValues());
+        assertThat(pass);
     }
 
     private void verifyUpdate(LogMinerRowLcr record, boolean checkGeometry, boolean checkOldValues, int oldValuesNumber) {

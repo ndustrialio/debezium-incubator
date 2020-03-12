@@ -41,7 +41,7 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
         super(taskContext, "log-miner");
 
         maxBatchSize.set(2000);
-        millisecondToSleepBetweenMiningQuery.set(500);
+        millisecondToSleepBetweenMiningQuery.set(1000);
         fetchedRecordSizeLimitToFallAsleep.set(50);
 
         currentScn.set(-1);

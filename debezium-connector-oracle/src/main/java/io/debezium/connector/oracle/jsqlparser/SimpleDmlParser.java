@@ -198,6 +198,9 @@ public class SimpleDmlParser {
 
     private void parseDelete(Tables tables, Delete st) {
         initColumns(tables, ParserUtils.stripeQuotes(st.getTable().getName()));
+        Alias alias = st.getTable().getAlias();
+        aliasName = alias == null ? "" : alias.getName().trim();
+
         newColumnValues.clear();
 
         Expression where = st.getWhere();
@@ -218,11 +221,17 @@ public class SimpleDmlParser {
             String value = ParserUtils.stripeQuotes(expressions.get(i).toString());
             Object stripedValue = ParserUtils.removeApostrophes(value);
             Column column = table.columnWithName(columnName);
+            if (column == null) {
+                LOGGER.trace("blacklisted column: {}", columnName);
+                continue;
+            }
             Object valueObject = ParserUtils.convertValueToSchemaType(column, stripedValue, converter);
 
             ColumnValueHolder columnValueHolder = newColumnValues.get(columnName);
-            columnValueHolder.setProcessed(true);
-            columnValueHolder.getColumnValue().setColumnData(valueObject);
+            if (columnValueHolder != null) {
+                columnValueHolder.setProcessed(true);
+                columnValueHolder.getColumnValue().setColumnData(valueObject);
+            }
         }
     }
 
@@ -238,6 +247,10 @@ public class SimpleDmlParser {
                 columnName = ParserUtils.stripeQuotes(columnName);
 
                 Column column = table.columnWithName(columnName);
+                if (column == null) {
+                    LOGGER.trace("blacklisted column in where clause: {}", columnName);
+                    return;
+                }
                 value = ParserUtils.removeApostrophes(value);
 
                 ColumnValueHolder columnValueHolder = oldColumnValues.get(columnName.toUpperCase());

@@ -31,6 +31,7 @@ public class RowMapper {
     public static final int UPDATE = 3;
     public static final int DDL = 5;
     public static final int COMMIT = 7;
+    public static final int MISSING_SCN = 34;
     public static final int ROLLBACK = 36;
 
     private static final int SCN = 1;
@@ -107,7 +108,7 @@ public class RowMapper {
                 return rs.getString(SQL_REDO);
             } else {
                 result = new StringBuilder(rs.getString(SQL_REDO));
-                int lobLimit = 10000; // todo : decide on approach ( XStream chunk option) and Lob limit
+                int lobLimit = 40000; // todo : decide on approach ( XStream chunk option) and Lob limit
                 BigDecimal scn = getScn(rs);
                 while (csf == 1) {
                     rs.next();

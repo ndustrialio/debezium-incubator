@@ -9,6 +9,7 @@ import io.debezium.connector.oracle.OracleDatabaseSchema;
 import io.debezium.connector.oracle.OracleOffsetContext;
 import io.debezium.connector.oracle.jsqlparser.SimpleDmlParser;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
+import io.debezium.data.Envelope;
 import io.debezium.pipeline.EventDispatcher;
 import io.debezium.pipeline.source.spi.ChangeEventSource;
 import io.debezium.relational.Table;
@@ -100,10 +101,15 @@ public class LogMinerQueryResultProcessor {
             String logMessage = String.format("transactionId = %s, SCN= %s, table_name= %s, segOwner= %s, operationCode=%s, offsetSCN= %s",
                     txId, scn, tableName, segOwner, operationCode, offsetContext.getScn());
 
+            if (scn == null) {
+                LOGGER.warn("Scn is null for {}", logMessage);
+                return 0;
+            }
+
             // Commit
             if (operationCode == RowMapper.COMMIT) {
-                LOGGER.trace("COMMIT, {}", logMessage);
                 if (transactionalBuffer.commit(txId, changeTime, context, logMessage)){
+                    LOGGER.trace("COMMIT, {}", logMessage);
                     commitCounter++;
                     cumulativeCommitTime = cumulativeCommitTime.plus(Duration.between(iterationStart, Instant.now()));
                 }
@@ -112,8 +118,8 @@ public class LogMinerQueryResultProcessor {
 
             //Rollback
             if (operationCode == RowMapper.ROLLBACK) {
-                LOGGER.trace("ROLLBACK, {}", logMessage);
                 if (transactionalBuffer.rollback(txId, logMessage)){
+                    LOGGER.trace("ROLLBACK, {}", logMessage);
                     rollbackCounter++;
                     cumulativeRollbackTime = cumulativeRollbackTime.plus(Duration.between(iterationStart, Instant.now()));
                 }
@@ -122,9 +128,15 @@ public class LogMinerQueryResultProcessor {
 
             // DDL
             if (operationCode == RowMapper.DDL) {
-                LOGGER.debug("DDL,  {}", logMessage);
+                LOGGER.debug("DDL: {}, REDO_SQL {}", logMessage, redo_sql);
                 continue;
                 // todo parse, add to the collection.
+            }
+
+            // MISSING_SCN
+            if (operationCode == RowMapper.MISSING_SCN) {
+                LOGGER.warn("Missing SCN,  {}", logMessage);
+                continue;
             }
 
             // DML
@@ -143,6 +155,16 @@ public class LogMinerQueryResultProcessor {
                     LOGGER.error("Following statement was not parsed: {}, details: {}", redo_sql, logMessage);
                     continue;
                 }
+
+                // this will happen for instance on a blacklisted column change, we will omit this update
+                if (rowLcr.getCommandType().equals(Envelope.Operation.UPDATE)
+                        && rowLcr.getOldValues().size() == rowLcr.getNewValues().size()
+                        && rowLcr.getNewValues().containsAll(rowLcr.getOldValues())) {
+                    LOGGER.trace("Following DML was skipped, " +
+                            "most likely because of ignored blacklisted column change: {}, details: {}", redo_sql, logMessage);
+                    continue;
+                }
+
                 rowLcr.setObjectOwner(segOwner);
                 rowLcr.setSourceTime(changeTime);
                 rowLcr.setTransactionId(txId);
@@ -156,6 +178,7 @@ public class LogMinerQueryResultProcessor {
                         // update SCN in offset context only if processed SCN less than SCN among other transactions
                         if (smallestScn == null || scn.compareTo(smallestScn) < 0) {
                             offsetContext.setScn(scn.longValue());
+                            transactionalBufferMetrics.setOldestScn(scn.longValue());
                         }
                         offsetContext.setTransactionId(txId);
                         offsetContext.setSourceTime(timestamp.toInstant());

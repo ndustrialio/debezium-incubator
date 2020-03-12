@@ -54,7 +54,7 @@ class SqlUtils {
      * @param startScn mine from
      * @param endScn mine till
      * @param strategy Log Mining strategy
-     * @return statement todo: handle corruption. STATUS (Double) — A value of 0 indicates it is executable
+     * @return statement todo: handle corruption. STATUS (Double) — value of 0 indicates it is executable
      */
     static String getStartLogMinerStatement(Long startScn, Long endScn, OracleConnectorConfig.LogMiningStrategy strategy, boolean isContinuousMining) {
         String miningStrategy;
@@ -105,14 +105,11 @@ class SqlUtils {
                 " FROM " + miningViewName +
                 " WHERE " +
                 // currently we do not capture changes from other schemas
-                " USERNAME = '"+ schemaName.toUpperCase() +"'" +
-                " AND OPERATION_CODE in (1,2,3,5) " +// 5 - DDL
+                " OPERATION_CODE in (1,2,3,5) " +// 5 - DDL
                 " AND SEG_OWNER = '"+ schemaName.toUpperCase() +"' " +
                 buildTableInPredicate(whiteListTableNames) +
-//                        " (commit_scn >= ? " +
-                " AND SCN > ? AND SCN <= ? " +
-                //" OR (OPERATION_CODE IN (7,36) AND USERNAME ='"+schemaName.toUpperCase()+"')";
-                " OR (OPERATION_CODE IN (7,36) AND USERNAME NOT IN ('SYS','SYSTEM','"+logMinerUser.toUpperCase()+"'))" + sorting; //todo username = schemaName?
+                " AND SCN >= ? AND SCN <= ? " +
+                " OR (OPERATION_CODE IN (7,34,36) AND USERNAME NOT IN ('SYS','SYSTEM','"+logMinerUser.toUpperCase()+"'))" + sorting; //todo username = schemaName?
     }
 
     /**
