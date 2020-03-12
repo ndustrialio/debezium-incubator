@@ -259,21 +259,25 @@ public final class TransactionalBuffer {
      * @return true if the rollback is for a transaction in the buffer
      */
     boolean rollback(String transactionId, String debugMessage) {
-        Transaction transaction = transactions.remove(transactionId);
+
+        Transaction transaction = transactions.get(transactionId);
         if (transaction != null) {
-            LOGGER.debug("Transaction {} rolled back", transactionId, debugMessage);
+            LOGGER.debug("Transaction {} rolled back, {}", transactionId, debugMessage);
+
+            transaction.lastScn = transaction.lastScn.add(BigDecimal.ONE);
+            calculateLargestScn();
+            calculateSmallestScn();
+
             abandonedTransactionIds.remove(transactionId);
             rolledBackTransactionIds.add(transactionId);
 
             metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
             metrics.ifPresent(TransactionalBufferMetrics::incrementRolledBackTransactions);
             metrics.ifPresent(m -> m.addRolledBackTransactionId(transactionId));
-
-            calculateSmallestScn();
-            calculateLargestScn();
-
             return true;
         }
+
+        transactions.remove(transactionId);
         return false;
     }
 
