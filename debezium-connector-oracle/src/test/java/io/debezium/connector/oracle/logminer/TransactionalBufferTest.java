@@ -97,6 +97,8 @@ public class TransactionalBufferTest {
         assertThat(transactionalBuffer.isEmpty()).isEqualTo(true);
     }
 
+    // todo more tests
+
     @Test
     public void testCalculateSmallestScnWhenTransactionIsCommitted() throws InterruptedException {
         CountDownLatch commitLatch = new CountDownLatch(1);
