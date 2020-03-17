@@ -158,7 +158,6 @@ public final class TransactionalBuffer {
      * @return true if committed transaction is in the buffer
      */
     boolean commit(String transactionId, Timestamp timestamp, ChangeEventSource.ChangeEventSourceContext context, String debugMessage) {
-        BigDecimal smallestScn = calculateSmallestScn();
 
         Transaction transaction = transactions.get(transactionId);
         if (transaction != null) {
@@ -167,6 +166,8 @@ public final class TransactionalBuffer {
         }
 
         transaction = transactions.remove(transactionId);
+        BigDecimal smallestScn = calculateSmallestScn();
+
         if (transaction == null) {
             return false;
         }
@@ -269,6 +270,8 @@ public final class TransactionalBuffer {
 
             transaction.lastScn = transaction.lastScn.add(BigDecimal.ONE);
             calculateLargestScn();
+
+            transactions.remove(transactionId);
             calculateSmallestScn();
 
             abandonedTransactionIds.remove(transactionId);
@@ -278,7 +281,6 @@ public final class TransactionalBuffer {
             metrics.ifPresent(TransactionalBufferMetrics::incrementRolledBackTransactions);
             metrics.ifPresent(m -> m.addRolledBackTransactionId(transactionId));
 
-            transactions.remove(transactionId);
             return true;
         }
 
