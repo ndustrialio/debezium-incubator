@@ -40,7 +40,7 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     LogMinerMetrics(CdcSourceTaskContext taskContext) {
         super(taskContext, "log-miner");
 
-        maxBatchSize.set(2000);
+        maxBatchSize.set(5_000);
         millisecondToSleepBetweenMiningQuery.set(1000);
         fetchedRecordSizeLimitToFallAsleep.set(50);
 
@@ -161,7 +161,7 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     // MBean accessible setters
     @Override
     public void setMaxBatchSize(int size) {
-        if (size >= 100 && size <= 10_000) {
+        if (size >= 100 && size <= 20_000) {
             maxBatchSize.set(size);
         }
     }

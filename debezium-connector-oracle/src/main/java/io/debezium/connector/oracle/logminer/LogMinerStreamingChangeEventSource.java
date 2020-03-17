@@ -155,7 +155,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                                 transactionalBuffer.abandonLongTransactions(nextOldestScn);
                                 LOGGER.debug("After abandoning, offset before: {}, offset after:{}", offsetContext.getScn(), nextOldestScn);
                                 offsetContext.setScn(nextOldestScn);
-                                lastProcessedScn = transactionalBuffer.getLargestScn().equals(BigDecimal.ZERO) ? nextScn : transactionalBuffer.getLargestScn().longValue();
+                                updateStartScn();
                             });
 
                             LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
@@ -181,15 +181,15 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                         metronome.pause();
                     }
 
+                    updateStartScn();
+
                     // get largest scn from the last uncommitted transaction and set as last processed scn
                     LOGGER.trace("largest scn = {}", transactionalBuffer.getLargestScn());
-
-                    lastProcessedScn  = transactionalBuffer.getLargestScn().equals(BigDecimal.ZERO) ? nextScn : transactionalBuffer.getLargestScn().longValue();
 
                     // update SCN in offset context only if buffer is empty, otherwise we update offset in TransactionalBuffer
                     if (transactionalBuffer.isEmpty()) {
                         offsetContext.setScn(lastProcessedScn);
-                        transactionalBuffer.resetLargestScn();
+                        transactionalBuffer.resetLargestScn(null);
                     }
 
                     res.close();
@@ -214,6 +214,16 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                 LOGGER.info("Transactional buffer dump: {}", transactionalBuffer.toString());
                 LOGGER.info("LogMiner metrics dump: {}", logMinerMetrics.toString());
             }
+        }
+    }
+
+    private void updateStartScn() {
+        long startScn  = transactionalBuffer.getLargestScn().equals(BigDecimal.ZERO) ? nextScn : transactionalBuffer.getLargestScn().longValue();
+        if (startScn == lastProcessedScn) {
+            transactionalBuffer.resetLargestScn(nextScn);
+            lastProcessedScn  = nextScn;
+        } else {
+            lastProcessedScn = startScn;
         }
     }
 

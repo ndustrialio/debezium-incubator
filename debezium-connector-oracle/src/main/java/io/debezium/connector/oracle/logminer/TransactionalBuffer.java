@@ -82,15 +82,18 @@ public final class TransactionalBuffer {
      * @return largest last SCN in the buffer among all transactions
      */
     public BigDecimal getLargestScn() {
-        calculateLargestScn();
         return largestScn;
     }
 
     /**
-     * Reset Largest SCNs
+     * Reset Largest SCN
      */
-    public void resetLargestScn() {
-        largestScn = BigDecimal.ZERO;
+    public void resetLargestScn(Long value) {
+        if (value != null) {
+            largestScn = new BigDecimal(value);
+        } else {
+            largestScn = BigDecimal.ZERO;
+        }
     }
 
     /**
@@ -274,10 +277,11 @@ public final class TransactionalBuffer {
             metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
             metrics.ifPresent(TransactionalBufferMetrics::incrementRolledBackTransactions);
             metrics.ifPresent(m -> m.addRolledBackTransactionId(transactionId));
+
+            transactions.remove(transactionId);
             return true;
         }
 
-        transactions.remove(transactionId);
         return false;
     }
 
