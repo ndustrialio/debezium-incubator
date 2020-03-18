@@ -152,7 +152,7 @@ public class LogMinerQueryResultProcessor {
                 LogMinerRowLcr rowLcr = dmlParser.getDmlChange();
                 LOGGER.trace("parsed record: {}" , rowLcr);
                 if (rowLcr == null || redo_sql == null) {
-                    LOGGER.error("Following statement was not parsed: {}, details: {}", redo_sql, logMessage);
+                    LOGGER.warn("Following statement was not parsed: {}, details: {}", redo_sql, logMessage);
                     continue;
                 }
 

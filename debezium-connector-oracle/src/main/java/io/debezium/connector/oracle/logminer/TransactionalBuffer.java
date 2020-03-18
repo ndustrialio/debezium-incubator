@@ -51,8 +51,13 @@ public final class TransactionalBuffer {
     private final ErrorHandler errorHandler;
     private Optional<TransactionalBufferMetrics> metrics;
     private final Set<String> abandonedTransactionIds;
+
     // storing rolledBackTransactionIds is for debugging purposes to check what was rolled back to research, todo delete in future releases
     private final Set<String> rolledBackTransactionIds;
+
+    // It holds the latest captured uncommitted SCN.
+    // This number tracks starting point for the next mining cycle.
+    // This gets increased by 1 on each COMMIT or ROLLBACK to avoid reading COMMITTED or ROLLEDBACK transactions on the next mining loop.
     private BigDecimal largestScn;
 
     /**
@@ -78,11 +83,17 @@ public final class TransactionalBuffer {
     }
 
     /**
-     *
      * @return largest last SCN in the buffer among all transactions
      */
     public BigDecimal getLargestScn() {
         return largestScn;
+    }
+
+    /**
+     * @return rolled back transactions
+     */
+    public Set<String> getRolledBackTransactionIds() {
+        return new HashSet<>(rolledBackTransactionIds);
     }
 
     /**
@@ -229,6 +240,7 @@ public final class TransactionalBuffer {
                 iter.remove();
 
                 calculateLargestScn();
+                calculateSmallestScn();
 
                 metrics.ifPresent(t -> t.addAbandonedTransactionId(transaction.getKey()));
                 metrics.ifPresent(t -> t.decrementCapturedDmlCounter(transaction.getValue().commitCallbacks.size()));

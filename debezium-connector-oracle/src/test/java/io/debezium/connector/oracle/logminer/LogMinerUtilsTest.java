@@ -59,7 +59,6 @@ public class LogMinerUtilsTest {
 
     @Test
     public void testBlacklistFiltering() throws Exception {
-        OracleChangeRecordValueConverter converters = new OracleChangeRecordValueConverter(null);
 
         ddlParser = new OracleDdlParser(true, CATALOG_NAME, SCHEMA_NAME);
         tables = new Tables();
