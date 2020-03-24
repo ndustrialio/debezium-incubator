@@ -73,8 +73,8 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
 
 //        this.dmlParser = new OracleDmlParser(true, connectorConfig.getDatabaseName(), connectorConfig.getSchemaName(),
 //                converters);
-        this.dmlParser = new SimpleDmlParser(connectorConfig.getDatabaseName(), connectorConfig.getSchemaName(), converters);
         this.catalogName = (connectorConfig.getPdbName() != null) ? connectorConfig.getPdbName() : connectorConfig.getDatabaseName();
+        this.dmlParser = new SimpleDmlParser(catalogName, connectorConfig.getSchemaName(), converters);
         this.transactionalBufferMetrics = new TransactionalBufferMetrics(taskContext);
         this.transactionalBufferMetrics.register(LOGGER);
         transactionalBuffer = new TransactionalBuffer(connectorConfig.getLogicalName(), errorHandler, transactionalBufferMetrics);
