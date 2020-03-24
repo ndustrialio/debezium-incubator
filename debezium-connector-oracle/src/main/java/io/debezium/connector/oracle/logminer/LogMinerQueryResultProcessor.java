@@ -98,8 +98,8 @@ public class LogMinerQueryResultProcessor {
             Timestamp changeTime = RowMapper.getChangeTime(resultSet);
             String txId = RowMapper.getTransactionId(resultSet);
 
-            String logMessage = String.format("transactionId = %s, SCN= %s, table_name= %s, segOwner= %s, operationCode=%s, offsetSCN= %s",
-                    txId, scn, tableName, segOwner, operationCode, offsetContext.getScn());
+            String logMessage = String.format("transactionId = %s, SCN= %s, table_name= %s, segOwner= %s, operationCode=%s, offsetSCN= %s, " +
+                            " commitOffsetSCN= %s", txId, scn, tableName, segOwner, operationCode, offsetContext.getScn(), offsetContext.getCommitScn());
 
             if (scn == null) {
                 LOGGER.warn("Scn is null for {}", logMessage);
@@ -108,7 +108,7 @@ public class LogMinerQueryResultProcessor {
 
             // Commit
             if (operationCode == RowMapper.COMMIT) {
-                if (transactionalBuffer.commit(txId, changeTime, context, logMessage)){
+                if (transactionalBuffer.commit(txId, scn, offsetContext, changeTime, context, logMessage)){
                     LOGGER.trace("COMMIT, {}", logMessage);
                     commitCounter++;
                     cumulativeCommitTime = cumulativeCommitTime.plus(Duration.between(iterationStart, Instant.now()));
@@ -174,7 +174,17 @@ public class LogMinerQueryResultProcessor {
                 try {
                     TableId tableId = RowMapper.getTableId(catalogName, resultSet);
 
-                    transactionalBuffer.registerCommitCallback(txId, scn, changeTime.toInstant(), redo_sql, (timestamp, smallestScn) -> {
+                    // todo delete after stowplan confirmation
+                    if ("inv_unit_fcy_visit".equalsIgnoreCase(tableName)) {
+                        if (operationCode == 1) {
+                            transactionalBufferMetrics.incrementUfvInsert();
+                        }
+                        if (operationCode == 2) {
+                            transactionalBufferMetrics.incrementUfvDelete();
+                        }
+                    }
+
+                    transactionalBuffer.registerCommitCallback(txId, scn, changeTime.toInstant(), redo_sql, (timestamp, smallestScn, commitScn, counter) -> {
                         // update SCN in offset context only if processed SCN less than SCN among other transactions
                         if (smallestScn == null || scn.compareTo(smallestScn) < 0) {
                             offsetContext.setScn(scn.longValue());
@@ -183,6 +193,9 @@ public class LogMinerQueryResultProcessor {
                         offsetContext.setTransactionId(txId);
                         offsetContext.setSourceTime(timestamp.toInstant());
                         offsetContext.setTableId(tableId);
+                        if (counter == 0){
+                            offsetContext.setCommitScn(commitScn.longValue());
+                        }
                         Table table = schema.tableFor(tableId);
                         LOGGER.trace("Processing DML event {} scn {}", rowLcr.toString(), scn);
 
@@ -201,11 +214,12 @@ public class LogMinerQueryResultProcessor {
         metrics.setCapturedDmlCount(dmlCounter);
         if (dmlCounter > 0 || commitCounter > 0 || rollbackCounter > 0) {
             LOGGER.debug("{} DMLs, {} Commits, {} Rollbacks were processed in {} milliseconds, commit time:{}, rollback time: {}, parse time:{}, " +
-                            "other time:{}, lag:{}, offset:{}",
+                            "other time:{}, lag:{}, offset scn:{}, offset commit scn:{}, active transactions:{}",
                     dmlCounter, commitCounter, rollbackCounter, (Duration.between(startTime, Instant.now()).toMillis()),
                     cumulativeCommitTime.toMillis(), cumulativeRollbackTime.toMillis(),
                     cumulativeParseTime.toMillis(), cumulativeOtherTime.toMillis(),
-                    transactionalBufferMetrics.getLagFromSource(), offsetContext.getScn());
+                    transactionalBufferMetrics.getLagFromSource(), offsetContext.getScn(),
+                    offsetContext.getCommitScn(), transactionalBufferMetrics.getNumberOfActiveTransactions());
         }
         return dmlCounter;
     }

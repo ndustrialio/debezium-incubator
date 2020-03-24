@@ -55,6 +55,12 @@ public interface TransactionalBufferMetricsMXBean {
     Long getOldestScn();
 
     /**
+     * It shows last committed SCN
+     * @return committed SCN
+     */
+    Long getCommittedScn();
+
+    /**
      * This is to get the lag between latest captured change timestamp in REDO LOG and time of it's placement in the buffer
      * @return lag in milliseconds
      */
@@ -95,4 +101,10 @@ public interface TransactionalBufferMetricsMXBean {
      * action to reset some metrics
      */
     void reset();
+
+    // todo delete after stowplan test
+    Long getUfvDelete();
+    void incrementUfvDelete();
+    Long getUfvInsert();
+    void incrementUfvInsert();
 }

@@ -33,6 +33,11 @@ public class OracleOffsetContext implements OffsetContext {
      */
     private boolean snapshotCompleted;
 
+    public OracleOffsetContext(OracleConnectorConfig connectorConfig, long scn, Long commitScn, LcrPosition lcrPosition, boolean snapshot, boolean snapshotCompleted) {
+        this(connectorConfig, scn, lcrPosition, snapshot, snapshotCompleted);
+        sourceInfo.setCommitScn(commitScn);
+    }
+
     private OracleOffsetContext(OracleConnectorConfig connectorConfig, long scn, LcrPosition lcrPosition, boolean snapshot, boolean snapshotCompleted) {
         partition = Collections.singletonMap(SERVER_PARTITION_KEY, connectorConfig.getLogicalName());
 
@@ -112,7 +117,12 @@ public class OracleOffsetContext implements OffsetContext {
             if (sourceInfo.getLcrPosition() != null) {
                 return Collections.singletonMap(SourceInfo.LCR_POSITION_KEY, sourceInfo.getLcrPosition().toString());
             }
-            return Collections.singletonMap(SourceInfo.SCN_KEY, sourceInfo.getScn());
+            Map<String, Object> offset = new HashMap<>();
+
+            offset.put(SourceInfo.SCN_KEY, sourceInfo.getScn());
+            offset.put(SourceInfo.COMMIT_SCN_KEY, sourceInfo.getCommitScn());
+
+            return offset;
         }
     }
 
@@ -130,8 +140,16 @@ public class OracleOffsetContext implements OffsetContext {
         sourceInfo.setScn(scn);
     }
 
+    public void setCommitScn(Long commitScn) {
+        sourceInfo.setCommitScn(commitScn);
+    }
+
     public long getScn() {
         return sourceInfo.getScn();
+    }
+
+    public Long getCommitScn() {
+        return sourceInfo.getCommitScn();
     }
 
     public void setLcrPosition(LcrPosition lcrPosition) {
@@ -216,7 +234,8 @@ public class OracleOffsetContext implements OffsetContext {
             Long scn;
             if (adapter == OracleConnectorConfig.ConnectorAdapter.LOG_MINER){
                 scn = (Long) offset.get(SourceInfo.SCN_KEY);
-                return new OracleOffsetContext(connectorConfig, scn, null, snapshot, snapshotCompleted);
+                Long commitScn = (Long) offset.get(SourceInfo.COMMIT_SCN_KEY);
+                return new OracleOffsetContext(connectorConfig, scn, commitScn, null, snapshot, snapshotCompleted);
             } else {
                 LcrPosition lcrPosition = LcrPosition.valueOf((String) offset.get(SourceInfo.LCR_POSITION_KEY));
                 scn = lcrPosition != null ? lcrPosition.getScn() : (Long) offset.get(SourceInfo.SCN_KEY);

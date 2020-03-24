@@ -7,6 +7,7 @@ package io.debezium.connector.oracle.logminer;
 
 import io.debezium.annotation.NotThreadSafe;
 import io.debezium.connector.oracle.OracleConnector;
+import io.debezium.connector.oracle.OracleOffsetContext;
 import io.debezium.pipeline.ErrorHandler;
 import io.debezium.pipeline.source.spi.ChangeEventSource;
 import io.debezium.util.Threads;
@@ -144,14 +145,6 @@ public final class TransactionalBuffer {
                 return;
             }
 
-//            BigDecimal previousScn = transaction.redoSqlMap.floorKey(scn);
-//            if (previousScn != null) {
-//                if (transaction.redoSqlMap.get(previousScn) != null && transaction.redoSqlMap.get(previousScn).contains(redoSql)) {
-//                    LOGGER.debug("Ignored duplicated capture for the previous SCN={}, REDO_SQL={}", scn, redoSql);
-//                    return;
-//                }
-//            }
-
             transaction.commitCallbacks.add(callback);
             transaction.addRedoSql(scn, redoSql);
         }
@@ -163,39 +156,53 @@ public final class TransactionalBuffer {
 
     /**
      * @param transactionId transaction identifier
+     * @param commitScn SCN of the commit
+     * @param offsetContext Oracle offset
      * @param timestamp     commit timestamp
      * @param context       context to check that source is running
      * @param debugMessage  todo delete
-     * @return true if committed transaction is in the buffer
+     * @return true if committed transaction is in the buffer and was not processed already
      */
-    boolean commit(String transactionId, Timestamp timestamp, ChangeEventSource.ChangeEventSourceContext context, String debugMessage) {
+    boolean commit(String transactionId, BigDecimal commitScn, OracleOffsetContext offsetContext, Timestamp timestamp,
+                   ChangeEventSource.ChangeEventSourceContext context, String debugMessage) {
 
         Transaction transaction = transactions.get(transactionId);
-        if (transaction != null) {
-            transaction.lastScn = transaction.lastScn.add(BigDecimal.ONE);
-            calculateLargestScn();
+        if (transaction == null) {
+            return false;
         }
+
+        transaction.lastScn = transaction.lastScn.add(BigDecimal.ONE);
+        calculateLargestScn();
 
         transaction = transactions.remove(transactionId);
         BigDecimal smallestScn = calculateSmallestScn();
 
-        if (transaction == null) {
-            return false;
-        }
         taskCounter.incrementAndGet();
         abandonedTransactionIds.remove(transactionId);
 
+        if (offsetContext.getCommitScn() != null && offsetContext.getCommitScn() >= commitScn.longValue()) {
+            LOGGER.info("Transaction {} was already processed. Committed SCN in offset is {}, commit SCN of the transaction is {}",
+                    transactionId, offsetContext.getCommitScn(), commitScn);
+            metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
+            return false;
+        }
+
         List<CommitCallback> commitCallbacks = transaction.commitCallbacks;
-        LOGGER.trace("COMMIT, {}, smallest SCN: {}, largest SCN {}", debugMessage, smallestScn, largestScn);
+        LOGGER.debug("COMMIT, {}, smallest SCN: {}, largest SCN {}", debugMessage, smallestScn, largestScn);
         executor.execute(() -> {
             try {
+                int counter = commitCallbacks.size();
                 for (CommitCallback callback : commitCallbacks) {
                     if (!context.isRunning()) {
                         return;
                     }
-                    callback.execute(timestamp, smallestScn);
-                    metrics.ifPresent(TransactionalBufferMetrics::incrementCommittedTransactions);
+                    callback.execute(timestamp, smallestScn, commitScn, --counter);
                 }
+
+                metrics.ifPresent(TransactionalBufferMetrics::incrementCommittedTransactions);
+                metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
+                metrics.ifPresent(m -> m.incrementCommittedDmlCounter(commitCallbacks.size()));
+                metrics.ifPresent(m -> m.setCommittedScn(commitScn.longValue()));
             } catch (InterruptedException e) {
                 LOGGER.error("Thread interrupted during running", e);
                 Thread.currentThread().interrupt();
@@ -203,8 +210,6 @@ public final class TransactionalBuffer {
                 errorHandler.setProducerThrowable(e);
             } finally {
                 taskCounter.decrementAndGet();
-                metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
-                metrics.ifPresent(m -> m.incrementCommittedDmlCounter(commitCallbacks.size()));
             }
         });
 
@@ -340,8 +345,10 @@ public final class TransactionalBuffer {
          *
          * @param timestamp   commit timestamp
          * @param smallestScn smallest SCN among other transactions
+         * @param commitScn commit SCN
+         * @param callbackNumber number of the callback in the transaction
          */
-        void execute(Timestamp timestamp, BigDecimal smallestScn) throws InterruptedException;
+        void execute(Timestamp timestamp, BigDecimal smallestScn, BigDecimal commitScn, int callbackNumber) throws InterruptedException;
     }
 
     @NotThreadSafe
