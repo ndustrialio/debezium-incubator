@@ -89,7 +89,7 @@ public class SimpleDmlParser {
     public void parse(String dmlContent, Tables tables, String txId){
         try {
             if (dmlContent == null) {
-                LOGGER.error("Cannot parse NULL , transaction: {}", txId);
+                LOGGER.warn("Cannot parse NULL , transaction: {}", txId);
                 rowLCR = null;
                 return;
             }

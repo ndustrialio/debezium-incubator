@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @ThreadSafe
 public class TransactionalBufferMetrics extends Metrics implements TransactionalBufferMetricsMXBean {
     private AtomicLong oldestScn = new AtomicLong();
+    private AtomicLong committedScn = new AtomicLong();
     private AtomicReference<Duration> lagFromTheSource = new AtomicReference<>();
     private AtomicInteger activeTransactions = new AtomicInteger();
     private AtomicLong rolledBackTransactions = new AtomicLong();
@@ -37,10 +38,32 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     private Instant startTime;
     private static long MILLIS_PER_SECOND = 1000L;
 
+
+    // temp todo delete after stowplan testing
+    private Long ufvDelete = 0L;
+    private Long ufvInsert = 0L;
+
+    public Long getUfvDelete() {
+        return ufvDelete;
+    }
+
+    public void incrementUfvDelete() {
+        this.ufvDelete++;
+    }
+
+    public Long getUfvInsert() {
+        return ufvInsert;
+    }
+
+    public void incrementUfvInsert() {
+        this.ufvInsert++;
+    }
+
     TransactionalBufferMetrics(CdcSourceTaskContext taskContext) {
         super(taskContext, "log-miner-transactional-buffer");
         startTime = Instant.now();
         oldestScn.set(-1);
+        committedScn.set(-1);
         lagFromTheSource.set(Duration.ZERO);
         reset();
     }
@@ -48,6 +71,10 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     // setters
     void setOldestScn(Long scn){
         oldestScn.set(scn);
+    }
+
+    public void setCommittedScn(Long scn){
+        committedScn.set(scn);
     }
 
     // todo deal with timezones
@@ -106,6 +133,11 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     @Override
     public Long getOldestScn() {
         return oldestScn.get();
+    }
+
+    @Override
+    public Long getCommittedScn() {
+        return committedScn.get();
     }
 
     @Override
@@ -182,6 +214,7 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     public String toString() {
         return "TransactionalBufferMetrics{" +
                 "oldestScn=" + oldestScn.get() +
+                ", committedScn=" + committedScn.get() +
                 ", lagFromTheSource=" + lagFromTheSource.get() +
                 ", activeTransactions=" + activeTransactions.get() +
                 ", rolledBackTransactions=" + rolledBackTransactions.get() +
