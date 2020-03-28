@@ -56,10 +56,10 @@ public final class TransactionalBuffer {
     // storing rolledBackTransactionIds is for debugging purposes to check what was rolled back to research, todo delete in future releases
     private final Set<String> rolledBackTransactionIds;
 
-    // It holds the latest captured uncommitted SCN.
+    // It holds the latest captured SCN.
     // This number tracks starting point for the next mining cycle.
-    // This gets increased by 1 on each COMMIT or ROLLBACK to avoid reading COMMITTED or ROLLEDBACK transactions on the next mining loop.
     private BigDecimal largestScn;
+    private BigDecimal lastCommittedScn;
 
     /**
      * Constructor to create a new instance.
@@ -79,6 +79,7 @@ public final class TransactionalBuffer {
             this.metrics = Optional.empty();
         }
         largestScn = BigDecimal.ZERO;
+        lastCommittedScn = BigDecimal.ZERO;
         this.abandonedTransactionIds = new HashSet<>();
         this.rolledBackTransactionIds = new HashSet<>();
     }
@@ -142,6 +143,16 @@ public final class TransactionalBuffer {
             List<String> redoSqls = transaction.redoSqlMap.values().stream().flatMap(List::stream).collect(Collectors.toList());
             if (redoSqls.contains(redoSql)) {
                 LOGGER.debug("Ignored duplicated capture as of SCN={}, REDO_SQL={}", scn, redoSql);
+
+                // todo delete it after stowplan deletion
+                if (redoSql.contains("INV_UNIT_FCY_VISIT")){
+                    if (redoSql.contains("insert into ")) {
+                        metrics.ifPresent(m -> m.decrementUfvInsert());
+                    }
+                    if (redoSql.contains("delete from ")) {
+                        metrics.ifPresent(m -> m.decrementUfvDelete());
+                    }
+                }
                 return;
             }
 
@@ -171,9 +182,13 @@ public final class TransactionalBuffer {
             return false;
         }
 
-        transaction.lastScn = transaction.lastScn.add(BigDecimal.ONE);
-        calculateLargestScn();
+        if (commitScn.longValue() <= lastCommittedScn.longValue()) {
+            LOGGER.debug("Ignoring transaction {}, it was already processed in previous mining cycle", transactionId);
+            transactions.remove(transactionId);
+            return false;
+        }
 
+        calculateLargestScn();
         transaction = transactions.remove(transactionId);
         BigDecimal smallestScn = calculateSmallestScn();
 
@@ -181,7 +196,7 @@ public final class TransactionalBuffer {
         abandonedTransactionIds.remove(transactionId);
 
         if (offsetContext.getCommitScn() != null && offsetContext.getCommitScn() >= commitScn.longValue()) {
-            LOGGER.info("Transaction {} was already processed. Committed SCN in offset is {}, commit SCN of the transaction is {}",
+            LOGGER.info("Transaction {} was already processed, ignore. Committed SCN in offset is {}, commit SCN of the transaction is {}",
                     transactionId, offsetContext.getCommitScn(), commitScn);
             metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
             return false;
@@ -199,6 +214,7 @@ public final class TransactionalBuffer {
                     callback.execute(timestamp, smallestScn, commitScn, --counter);
                 }
 
+                lastCommittedScn = new BigDecimal(commitScn.longValue());
                 metrics.ifPresent(TransactionalBufferMetrics::incrementCommittedTransactions);
                 metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
                 metrics.ifPresent(m -> m.incrementCommittedDmlCounter(commitCallbacks.size()));
@@ -214,6 +230,37 @@ public final class TransactionalBuffer {
         });
 
         return true;
+    }
+
+    /**
+     * Clears registered callbacks for given transaction identifier.
+     *
+     * @param transactionId transaction id
+     * @param debugMessage  todo delete in the future
+     * @return true if the rollback is for a transaction in the buffer
+     */
+    boolean rollback(String transactionId, String debugMessage) {
+
+        Transaction transaction = transactions.get(transactionId);
+        if (transaction != null) {
+            LOGGER.debug("Transaction {} rolled back, {}", transactionId, debugMessage);
+
+            //transaction.lastScn = transaction.lastScn.add(BigDecimal.ONE);
+
+            calculateLargestScn(); // in case if largest SCN was in this transaction
+            transactions.remove(transactionId);
+
+            abandonedTransactionIds.remove(transactionId);
+            rolledBackTransactionIds.add(transactionId);
+
+            metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
+            metrics.ifPresent(TransactionalBufferMetrics::incrementRolledBackTransactions);
+            metrics.ifPresent(m -> m.addRolledBackTransactionId(transactionId));
+
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -243,9 +290,7 @@ public final class TransactionalBuffer {
                 LOGGER.warn("Following long running transaction will be abandoned and ignored: {} ", transaction.getValue().toString());
                 abandonedTransactionIds.add(transaction.getKey());
                 iter.remove();
-
                 calculateLargestScn();
-                calculateSmallestScn();
 
                 metrics.ifPresent(t -> t.addAbandonedTransactionId(transaction.getKey()));
                 metrics.ifPresent(t -> t.decrementCapturedDmlCounter(transaction.getValue().commitCallbacks.size()));
@@ -270,38 +315,6 @@ public final class TransactionalBuffer {
                 .map(transaction -> transaction.lastScn)
                 .max(BigDecimal::compareTo)
                 .orElseThrow(() -> new DataException("Cannot calculate largest SCN"));
-    }
-
-    /**
-     * Clears registered callbacks for given transaction identifier.
-     *
-     * @param transactionId transaction id
-     * @param debugMessage  todo delete in the future
-     * @return true if the rollback is for a transaction in the buffer
-     */
-    boolean rollback(String transactionId, String debugMessage) {
-
-        Transaction transaction = transactions.get(transactionId);
-        if (transaction != null) {
-            LOGGER.debug("Transaction {} rolled back, {}", transactionId, debugMessage);
-
-            transaction.lastScn = transaction.lastScn.add(BigDecimal.ONE);
-            calculateLargestScn();
-
-            transactions.remove(transactionId);
-            calculateSmallestScn();
-
-            abandonedTransactionIds.remove(transactionId);
-            rolledBackTransactionIds.add(transactionId);
-
-            metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
-            metrics.ifPresent(TransactionalBufferMetrics::incrementRolledBackTransactions);
-            metrics.ifPresent(m -> m.addRolledBackTransactionId(transactionId));
-
-            return true;
-        }
-
-        return false;
     }
 
     /**

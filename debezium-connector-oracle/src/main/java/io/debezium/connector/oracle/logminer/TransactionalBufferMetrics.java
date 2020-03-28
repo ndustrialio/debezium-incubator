@@ -51,12 +51,19 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         this.ufvDelete++;
     }
 
+    public void decrementUfvDelete() {
+        this.ufvDelete--;
+    }
+
     public Long getUfvInsert() {
         return ufvInsert;
     }
 
     public void incrementUfvInsert() {
         this.ufvInsert++;
+    }
+    public void decrementUfvInsert() {
+        this.ufvInsert--;
     }
 
     TransactionalBufferMetrics(CdcSourceTaskContext taskContext) {
