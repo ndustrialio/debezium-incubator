@@ -55,8 +55,8 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     private final LogMinerMetrics logMinerMetrics;
     private final OracleConnectorConfig.LogMiningStrategy strategy;
     private final boolean isContinuousMining;
-    private long lastProcessedScn;
-    private long nextScn;
+    private long startScn;
+    private long endScn;
 
     public LogMinerStreamingChangeEventSource(OracleConnectorConfig connectorConfig, OracleOffsetContext offsetContext,
                                               OracleConnection jdbcConnection, EventDispatcher<TableId> dispatcher,
@@ -102,10 +102,10 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                          connection.prepareStatement(SqlUtils.
                                  queryLogMinerContents(connectorConfig.getSchemaName(), jdbcConnection.username(), schema, SqlUtils.LOGMNR_CONTENTS_VIEW))) {
 
-                lastProcessedScn = offsetContext.getScn();
+                startScn = offsetContext.getScn();
 
                 long oldestScnInOnlineRedo = LogMinerHelper.getFirstOnlineLogScn(connection);
-                if (lastProcessedScn < oldestScnInOnlineRedo) {
+                if (startScn < oldestScnInOnlineRedo) {
                     throw new RuntimeException("Online REDO LOG files don't contain the offset SCN. Clean offset and start over");
                 }
 
@@ -120,7 +120,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                 }
 
                 if (!isContinuousMining) {
-                    LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
+                    LogMinerHelper.setRedoLogFilesForMining(connection, startScn);
                 }
                 LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
                 String currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
@@ -132,8 +132,8 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                 while (context.isRunning()) {
                     metronome = Metronome.sleeper(Duration.ofMillis(logMinerMetrics.getMillisecondToSleepBetweenMiningQuery()), clock);
 
-                    nextScn = LogMinerHelper.getNextScn(connection, lastProcessedScn, logMinerMetrics);
-                    LOGGER.trace("startScn: {}, endScn: {}", lastProcessedScn, nextScn);
+                    endScn = LogMinerHelper.getNextScn(connection, startScn, logMinerMetrics);
+                    LOGGER.trace("startScn: {}, endScn: {}", startScn, endScn);
 
                     String possibleNewCurrentLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
 
@@ -158,7 +158,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                                 updateStartScn();
                             });
 
-                            LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
+                            LogMinerHelper.setRedoLogFilesForMining(connection, startScn);
                         }
 
                         LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
@@ -166,11 +166,11 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                         currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
                     }
 
-                    LogMinerHelper.startOnlineMining(connection, lastProcessedScn, nextScn, strategy, isContinuousMining);
+                    LogMinerHelper.startOnlineMining(connection, startScn, endScn, strategy, isContinuousMining);
 
                     Instant startTime = Instant.now();
-                    fetchFromMiningView.setLong(1, lastProcessedScn);
-                    fetchFromMiningView.setLong(2, nextScn);
+                    fetchFromMiningView.setLong(1, startScn);
+                    fetchFromMiningView.setLong(2, endScn);
 
                     ResultSet res = fetchFromMiningView.executeQuery();
                     logMinerMetrics.setLastLogMinerQueryDuration(Duration.between(startTime, Instant.now()));
@@ -188,7 +188,8 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
 
                     // update SCN in offset context only if buffer is empty, otherwise we update offset in TransactionalBuffer
                     if (transactionalBuffer.isEmpty()) {
-                        offsetContext.setScn(lastProcessedScn);
+                        // When the buffer is empty, move mining boundaries forward
+                        offsetContext.setScn(startScn);
                         transactionalBuffer.resetLargestScn(null);
                     }
 
@@ -209,7 +210,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                 LOGGER.error("Mining session was stopped due to the {} ", e.toString());
                 throw new RuntimeException(e);
             } finally {
-                LOGGER.info("lastProcessedScn={}, nextScn={}, offsetContext.getScn()={}", lastProcessedScn, nextScn, offsetContext.getScn());
+                LOGGER.info("lastProcessedScn={}, endScn={}, offsetContext.getScn()={}", startScn, endScn, offsetContext.getScn());
                 LOGGER.info("Transactional buffer metrics dump: {}", transactionalBufferMetrics.toString());
                 LOGGER.info("Transactional buffer dump: {}", transactionalBuffer.toString());
                 LOGGER.info("LogMiner metrics dump: {}", logMinerMetrics.toString());
@@ -218,13 +219,12 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     }
 
     private void updateStartScn() {
-        long startScn  = transactionalBuffer.getLargestScn().equals(BigDecimal.ZERO) ? nextScn : transactionalBuffer.getLargestScn().longValue();
-        if (startScn == lastProcessedScn) {
-            transactionalBuffer.resetLargestScn(nextScn);
-            lastProcessedScn  = nextScn;
-        } else {
-            lastProcessedScn = startScn;
+        long nextStartScn  = transactionalBuffer.getLargestScn().equals(BigDecimal.ZERO) ? endScn : transactionalBuffer.getLargestScn().longValue();
+        if (nextStartScn <= startScn) {
+            // When system is idle, largest SCN may stay unchanched, move it forward then
+            transactionalBuffer.resetLargestScn(endScn);
         }
+        startScn = endScn;
     }
 
     @Override
