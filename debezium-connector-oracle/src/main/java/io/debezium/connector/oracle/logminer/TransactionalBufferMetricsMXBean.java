@@ -41,6 +41,12 @@ public interface TransactionalBufferMetricsMXBean {
     long getCapturedDmlThroughput();
 
     /**
+     * exposes tatal number of captured DMLs
+     * @return captured DML count
+     */
+    long getCapturedDmlCount();
+
+    /**
      * Exposes number of transaction, buffered in memory
      *
      * @return number of currently buffered transactions

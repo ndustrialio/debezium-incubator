@@ -119,7 +119,7 @@ public class LogMinerQueryResultProcessor {
             //Rollback
             if (operationCode == RowMapper.ROLLBACK) {
                 if (transactionalBuffer.rollback(txId, logMessage)){
-                    LOGGER.trace("ROLLBACK, {}", logMessage);
+                    LOGGER.debug("ROLLBACK, {}", logMessage);
                     rollbackCounter++;
                     cumulativeRollbackTime = cumulativeRollbackTime.plus(Duration.between(iterationStart, Instant.now()));
                 }
