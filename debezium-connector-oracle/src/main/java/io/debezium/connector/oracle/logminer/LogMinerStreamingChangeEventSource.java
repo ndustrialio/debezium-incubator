@@ -133,7 +133,10 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     metronome = Metronome.sleeper(Duration.ofMillis(logMinerMetrics.getMillisecondToSleepBetweenMiningQuery()), clock);
 
                     endScn = LogMinerHelper.getNextScn(connection, startScn, logMinerMetrics);
-                    LOGGER.trace("startScn: {}, endScn: {}", startScn, endScn);
+                    // this is critical to wait to let LogWriter to finish it's job
+                    metronome.pause();
+
+                    LOGGER.debug("startScn: {}, endScn: {}", startScn, endScn);
 
                     String possibleNewCurrentLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
 
@@ -150,11 +153,11 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                             }
 
                             // Abandon long running transactions
-                            Optional<Long> oldestScnToAbandonTransactions = LogMinerHelper.getLastScnFromTheOldestOnlineRedo(connection, offsetContext.getScn());
-                            oldestScnToAbandonTransactions.ifPresent(nextOldestScn -> {
-                                transactionalBuffer.abandonLongTransactions(nextOldestScn);
-                                LOGGER.debug("After abandoning, offset before: {}, offset after:{}", offsetContext.getScn(), nextOldestScn);
-                                offsetContext.setScn(nextOldestScn);
+                            Optional<Long> lastScnToAbandonTransactions = LogMinerHelper.getLastScnFromTheOldestOnlineRedo(connection, offsetContext.getScn());
+                            lastScnToAbandonTransactions.ifPresent(nextOffsetScn -> {
+                                transactionalBuffer.abandonLongTransactions(nextOffsetScn);
+                                LOGGER.debug("After abandoning, offset before: {}, offset after:{}", offsetContext.getScn(), nextOffsetScn);
+                                offsetContext.setScn(nextOffsetScn);
                                 updateStartScn();
                             });
 
@@ -162,7 +165,6 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                         }
 
                         LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
-
                         currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
                     }
 
@@ -221,7 +223,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     private void updateStartScn() {
         long nextStartScn  = transactionalBuffer.getLargestScn().equals(BigDecimal.ZERO) ? endScn : transactionalBuffer.getLargestScn().longValue();
         if (nextStartScn <= startScn) {
-            // When system is idle, largest SCN may stay unchanched, move it forward then
+            // When system is idle, largest SCN may stay unchanged, move it forward then
             transactionalBuffer.resetLargestScn(endScn);
         }
         startScn = endScn;

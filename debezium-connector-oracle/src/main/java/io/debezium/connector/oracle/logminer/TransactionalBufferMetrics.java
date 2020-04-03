@@ -116,10 +116,6 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         capturedDmlCounter.incrementAndGet();
     }
 
-    void decrementCapturedDmlCounter(int counter) {
-        capturedDmlCounter.getAndAdd(-counter);
-    }
-
     void incrementCommittedDmlCounter(int counter) {
         committedDmlCounter.getAndAdd(counter);
     }
@@ -173,6 +169,11 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     }
 
     @Override
+    public long getCapturedDmlCount() {
+        return capturedDmlCounter.longValue();
+    }
+
+    @Override
     public long getLagFromSource() {
         return lagFromTheSource.get().toMillis();
     }
@@ -215,6 +216,9 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         totalLagsFromTheSource.set(Duration.ZERO);
         abandonedTransactionIds.set(new HashSet<>());
         rolledBackTransactionIds.set(new HashSet<>());
+        lagFromTheSource.set(Duration.ZERO);
+        ufvDelete = 0L;
+        ufvInsert = 0L;
     }
 
     @Override

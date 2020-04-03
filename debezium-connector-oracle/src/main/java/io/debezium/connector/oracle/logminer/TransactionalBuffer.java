@@ -142,7 +142,7 @@ public final class TransactionalBuffer {
 
             List<String> redoSqls = transaction.redoSqlMap.values().stream().flatMap(List::stream).collect(Collectors.toList());
             if (redoSqls.contains(redoSql)) {
-                LOGGER.debug("Ignored duplicated capture as of SCN={}, REDO_SQL={}", scn, redoSql);
+                LOGGER.info("Ignored duplicated capture as of SCN={}, REDO_SQL={}", scn, redoSql);
 
                 // todo delete it after stowplan deletion
                 if (redoSql.contains("INV_UNIT_FCY_VISIT")){
@@ -203,7 +203,7 @@ public final class TransactionalBuffer {
         }
 
         List<CommitCallback> commitCallbacks = transaction.commitCallbacks;
-        LOGGER.debug("COMMIT, {}, smallest SCN: {}, largest SCN {}", debugMessage, smallestScn, largestScn);
+        LOGGER.trace("COMMIT, {}, smallest SCN: {}, largest SCN {}", debugMessage, smallestScn, largestScn);
         executor.execute(() -> {
             try {
                 int counter = commitCallbacks.size();
@@ -245,8 +245,6 @@ public final class TransactionalBuffer {
         if (transaction != null) {
             LOGGER.debug("Transaction {} rolled back, {}", transactionId, debugMessage);
 
-            //transaction.lastScn = transaction.lastScn.add(BigDecimal.ONE);
-
             calculateLargestScn(); // in case if largest SCN was in this transaction
             transactions.remove(transactionId);
 
@@ -287,13 +285,12 @@ public final class TransactionalBuffer {
         while (iter.hasNext()) {
             Map.Entry<String, Transaction> transaction = iter.next();
             if (transaction.getValue().firstScn.compareTo(threshold) <= 0) {
-                LOGGER.warn("Following long running transaction will be abandoned and ignored: {} ", transaction.getValue().toString());
+                LOGGER.warn("Following long running transaction {} will be abandoned and ignored: {} ", transaction.getKey(), transaction.getValue().toString());
                 abandonedTransactionIds.add(transaction.getKey());
                 iter.remove();
                 calculateLargestScn();
 
                 metrics.ifPresent(t -> t.addAbandonedTransactionId(transaction.getKey()));
-                metrics.ifPresent(t -> t.decrementCapturedDmlCounter(transaction.getValue().commitCallbacks.size()));
                 metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
             }
         }
