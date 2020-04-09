@@ -116,19 +116,5 @@ public class LogMinerRowLcrImpl implements LogMinerRowLcr {
     public int hashCode() {
         return Objects.hash(commandType, newLmColumnValues, oldLmColumnValues);
     }
-
-    @Override
-    public String toString() {
-        return "LogMinerRowLcrImpl{" +
-                "commandType=" + commandType +
-                ", newLmColumnValues=" + newLmColumnValues +
-                ", oldLmColumnValues=" + oldLmColumnValues +
-                ", objectOwner='" + objectOwner + '\'' +
-                ", objectName='" + objectName + '\'' +
-                ", sourceTime=" + sourceTime +
-                ", transactionId='" + transactionId + '\'' +
-                ", scn=" + scn +
-                '}';
-    }
 }
 

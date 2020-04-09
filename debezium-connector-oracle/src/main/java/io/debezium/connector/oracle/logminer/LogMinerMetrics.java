@@ -168,7 +168,7 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
 
     @Override
     public void setMillisecondToSleepBetweenMiningQuery(int milliseconds) {
-        if (milliseconds >= 1000 && milliseconds <= 5000){
+        if (milliseconds >= 100 && milliseconds <= 5_000){
             millisecondToSleepBetweenMiningQuery.set(milliseconds);
         }
     }

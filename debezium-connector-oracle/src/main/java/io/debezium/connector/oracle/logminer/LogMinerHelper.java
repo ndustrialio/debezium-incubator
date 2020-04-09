@@ -80,7 +80,7 @@ public class LogMinerHelper {
      * @throws SQLException if anything unexpected happens
      */
     static long getNextScn(Connection connection, long lastProcessesScn, LogMinerMetrics metrics) throws SQLException {
-        long currentScn = getCurrentScn(connection);
+        long currentScn = getCurrentScn(connection) - 1;
         metrics.setCurrentScn(currentScn);
         int miningDiapason = metrics.getMaxBatchSize();
         return currentScn < (lastProcessesScn + miningDiapason) ? currentScn : lastProcessesScn + miningDiapason;
