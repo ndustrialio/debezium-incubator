@@ -33,7 +33,6 @@ import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 /**
  * @author Andrey Pustovetov
@@ -140,9 +139,8 @@ public final class TransactionalBuffer {
                 return;
             }
 
-            List<String> redoSqls = transaction.redoSqlMap.values().stream().flatMap(List::stream).collect(Collectors.toList());
-            if (redoSqls.contains(redoSql)) {
-                LOGGER.info("Ignored duplicated capture as of SCN={}, REDO_SQL={}", scn, redoSql);
+            if (!transaction.flatRedo.add(redoSql)) {
+                LOGGER.warn("Ignored duplicated capture as of SCN={}, REDO_SQL={}", scn, redoSql);
 
                 // todo delete it after stowplan deletion
                 if (redoSql.contains("INV_UNIT_FCY_VISIT")){
@@ -369,12 +367,14 @@ public final class TransactionalBuffer {
         private BigDecimal lastScn;
         private final List<CommitCallback> commitCallbacks;
         private final NavigableMap<BigDecimal, List<String>> redoSqlMap;
+        private final Set<String> flatRedo;
 
         private Transaction(BigDecimal firstScn) {
             this.firstScn = firstScn;
             this.commitCallbacks = new ArrayList<>();
             this.redoSqlMap = new TreeMap<>();
             this.lastScn = firstScn;
+            flatRedo = new HashSet();
         }
 
         private void addRedoSql(BigDecimal scn, String redoSql) {
@@ -386,6 +386,7 @@ public final class TransactionalBuffer {
             } else {
                 sqlList.add(redoSql);
             }
+            flatRedo.add(redoSql);
         }
 
         @Override

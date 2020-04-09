@@ -171,6 +171,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     LogMinerHelper.startOnlineMining(connection, startScn, endScn, strategy, isContinuousMining);
 
                     Instant startTime = Instant.now();
+                    fetchFromMiningView.setFetchSize(10000); // todo parametrize
                     fetchFromMiningView.setLong(1, startScn);
                     fetchFromMiningView.setLong(2, endScn);
 
