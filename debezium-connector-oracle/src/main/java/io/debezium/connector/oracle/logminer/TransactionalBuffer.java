@@ -135,12 +135,12 @@ public final class TransactionalBuffer {
 
             // todo this should never happen, delete when tested and confirmed
             if (rolledBackTransactionIds.contains(transactionId)) {
-                LOGGER.debug("Ignore DML for rolled back transaction: SCN={}, REDO_SQL={}", scn, redoSql);
+                LOGGER.warn("Ignore DML for rolled back transaction: SCN={}, REDO_SQL={}", scn, redoSql);
                 return;
             }
 
             if (!transaction.flatRedo.add(redoSql)) {
-                LOGGER.warn("Ignored duplicated capture as of SCN={}, REDO_SQL={}", scn, redoSql);
+                LOGGER.warn("Ignored duplicated capture as of SCN={}, transaction= {}, REDO_SQL={}", scn, transactionId, redoSql);
 
                 // todo delete it after stowplan deletion
                 if (redoSql.contains("INV_UNIT_FCY_VISIT")){

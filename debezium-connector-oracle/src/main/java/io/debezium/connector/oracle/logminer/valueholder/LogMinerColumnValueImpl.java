@@ -5,6 +5,8 @@
  */
 package io.debezium.connector.oracle.logminer.valueholder;
 
+import io.debezium.connector.oracle.antlr.listener.ParserUtils;
+
 import java.util.Objects;
 
 /**
@@ -39,7 +41,11 @@ public class LogMinerColumnValueImpl implements LogMinerColumnValue {
 
     @Override
     public void setColumnData(Object columnData) {
-        this.columnData = columnData;
+        if (columnData instanceof String) {
+            this.columnData = ParserUtils.replaceDoubleBackSlashes((String) columnData);
+        } else {
+            this.columnData = columnData;
+        }
     }
 
     @Override
