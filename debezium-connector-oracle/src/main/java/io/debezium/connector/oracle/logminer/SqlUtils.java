@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 class SqlUtils {
 
     static final String LOGMNR_CONTENTS_VIEW = "V$LOGMNR_CONTENTS";
+    static final String LOGMNR_AUDIT_TABLE = "LOG_MINING_AUDIT";
 
     static final String BUILD_DICTIONARY = "BEGIN DBMS_LOGMNR_D.BUILD (options => DBMS_LOGMNR_D.STORE_IN_REDO_LOGS); END;";
     static final String CURRENT_SCN = "SELECT CURRENT_SCN FROM V$DATABASE";
@@ -36,6 +37,12 @@ class SqlUtils {
     static final String SWITCH_HISTORY_TOTAL_COUNT = "select 'total', count(1) from v$archived_log where first_time > trunc(sysdate)\n" +
             "and dest_id = (select dest_id from V$ARCHIVE_DEST_STATUS where status='VALID' and type='LOCAL')";
     static final String CURRENT_REDO_LOG_NAME = "select f.member from v$log log, v$logfile f  where log.group#=f.group# and log.status='CURRENT'";
+    static final String AUDIT_TABLE_EXISTS = "SELECT '1' AS ONE FROM USER_TABLES WHERE TABLE_NAME = '" + LOGMNR_AUDIT_TABLE + "'";
+    static final String AUDIT_TABLE_RECORD_EXISTS = "SELECT '1' AS ONE FROM " + LOGMNR_AUDIT_TABLE;
+    static final String CREATE_AUDIT_TABLE = "CREATE TABLE " + LOGMNR_AUDIT_TABLE + "(LAST_SCN NUMBER(19,0))";
+    static final String INSERT_AUDIT_TABLE = "INSERT INTO " + LOGMNR_AUDIT_TABLE + " VALUES(0)";
+    static final String UPDATE_AUDIT_TABLE = "UPDATE " + LOGMNR_AUDIT_TABLE + " SET LAST_SCN =";
+
     private static final Logger LOGGER = LoggerFactory.getLogger(SqlUtils.class);
 
     // todo handle INVALID file member (report somehow and continue to work with valid file), handle adding multiplexed files,

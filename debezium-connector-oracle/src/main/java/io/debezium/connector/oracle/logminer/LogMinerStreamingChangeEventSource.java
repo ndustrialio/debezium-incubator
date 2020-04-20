@@ -103,6 +103,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                                  queryLogMinerContents(connectorConfig.getSchemaName(), jdbcConnection.username(), schema, SqlUtils.LOGMNR_CONTENTS_VIEW))) {
 
                 startScn = offsetContext.getScn();
+                LogMinerHelper.createAuditTable(connection);
 
                 long oldestScnInOnlineRedo = LogMinerHelper.getFirstOnlineLogScn(connection);
                 if (startScn < oldestScnInOnlineRedo) {
@@ -133,7 +134,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     metronome = Metronome.sleeper(Duration.ofMillis(logMinerMetrics.getMillisecondToSleepBetweenMiningQuery()), clock);
 
                     endScn = LogMinerHelper.getNextScn(connection, startScn, logMinerMetrics);
-                    // this is critical to wait to let LogWriter to finish it's job
+                    // this is to let LogWriter to finish it's job
                     metronome.pause();
 
                     LOGGER.debug("startScn: {}, endScn: {}", startScn, endScn);
@@ -200,9 +201,9 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     // we don't do it for other modes to save time on building data dictionary
 //                    if (strategy == OracleConnectorConfig.LogMiningStrategy.ONLINE_CATALOG) {
 //                        LogMinerHelper.endMining(connection);
-//                        LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
-//                        currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
+//                        LogMinerHelper.setRedoLogFilesForMining(connection, startScn);
 //                        LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
+//                        currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
 //                    }
                 }
             } catch (Throwable e) {

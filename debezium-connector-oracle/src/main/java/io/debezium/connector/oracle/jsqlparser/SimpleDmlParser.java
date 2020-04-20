@@ -55,18 +55,9 @@ public class SimpleDmlParser {
     protected Table table;
     private final OracleChangeRecordValueConverter converter;
     private String aliasName;
-    private LogMinerRowLcr rowLCR;
     private Map<String, ColumnValueHolder> newColumnValues = new LinkedHashMap<>();
     private Map<String, ColumnValueHolder> oldColumnValues = new LinkedHashMap<>();
     private CCJSqlParserManager pm;
-
-    /**
-     * get parsed DML as an object
-     * @return this object
-     */
-    public LogMinerRowLcr getDmlChange() {
-        return rowLCR;
-    }
 
     /**
      * Constructor
@@ -85,13 +76,13 @@ public class SimpleDmlParser {
      * This parses a DML
      * @param dmlContent DML
      * @param tables debezium Tables
+     * @return parsed value holder class
      */
-    public void parse(String dmlContent, Tables tables, String txId){
+    public LogMinerRowLcr parse(String dmlContent, Tables tables, String txId){
         try {
             if (dmlContent == null) {
-                LOGGER.warn("Cannot parse NULL , transaction: {}", txId);
-                rowLCR = null;
-                return;
+                LOGGER.debug("Cannot parse NULL , transaction: {}", txId);
+                return null;
             }
             // todo investigate: happens on CTAS
             if (dmlContent.endsWith(";null;")) {
@@ -100,6 +91,8 @@ public class SimpleDmlParser {
             if (!dmlContent.endsWith(";")) {
                 dmlContent = dmlContent + ";";
             }
+            // this is to handle cases when a record contains escape character(s). This parser throws.
+            dmlContent = dmlContent.replaceAll("\\\\", "\\\\\\\\");
 
             newColumnValues.clear();
             oldColumnValues.clear();
@@ -111,27 +104,28 @@ public class SimpleDmlParser {
                         .filter(ColumnValueHolder::isProcessed).map(ColumnValueHolder::getColumnValue).collect(Collectors.toList());
                 List<LogMinerColumnValue> actualOldValues = oldColumnValues.values().stream()
                         .filter(ColumnValueHolder::isProcessed).map(ColumnValueHolder::getColumnValue).collect(Collectors.toList());
-                rowLCR = new LogMinerRowLcrImpl(Envelope.Operation.UPDATE, actualNewValues, actualOldValues);
+                return new LogMinerRowLcrImpl(Envelope.Operation.UPDATE, actualNewValues, actualOldValues);
 
             } else if (st instanceof Insert) {
                 parseInsert(tables, (Insert) st);
                 List<LogMinerColumnValue> actualNewValues = newColumnValues.values()
                         .stream().map(ColumnValueHolder::getColumnValue).collect(Collectors.toList());
-                rowLCR = new LogMinerRowLcrImpl(Envelope.Operation.CREATE, actualNewValues, Collections.emptyList());
+                return new LogMinerRowLcrImpl(Envelope.Operation.CREATE, actualNewValues, Collections.emptyList());
 
             } else if (st instanceof Delete) {
                 parseDelete(tables, (Delete) st);
                 List<LogMinerColumnValue> actualOldValues = oldColumnValues.values()
                         .stream().map(ColumnValueHolder::getColumnValue).collect(Collectors.toList());
-                rowLCR = new LogMinerRowLcrImpl(Envelope.Operation.DELETE, Collections.emptyList(), actualOldValues);
+                return new LogMinerRowLcrImpl(Envelope.Operation.DELETE, Collections.emptyList(), actualOldValues);
 
             } else {
-                throw new UnsupportedOperationException("Operation " + st + " is not supported yet");
+                LOGGER.error("Operation {} is not supported yet", st);
+                return null;
             }
 
         } catch (Throwable e) {
             LOGGER.error("Cannot parse statement : {}, transaction: {}, due to the {}", dmlContent, txId, e);
-            rowLCR = null;
+            return null;
         }
 
     }

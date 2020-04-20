@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
  */
 public class LogMinerHelper {
 
+    private final static String UNKNOWN = "unknown";
     private final static Logger LOGGER = LoggerFactory.getLogger(LogMinerHelper.class);
 
     /**
@@ -68,6 +69,19 @@ public class LogMinerHelper {
         }
     }
 
+    public static void createAuditTable(Connection connection) throws SQLException{
+        String tableExists = getStringResult(connection, SqlUtils.AUDIT_TABLE_EXISTS);
+        if (tableExists == null) {
+            executeCallableStatement(connection, SqlUtils.CREATE_AUDIT_TABLE);
+        }
+
+        String recordExists = getStringResult(connection, SqlUtils.AUDIT_TABLE_RECORD_EXISTS);
+        if (recordExists == null) {
+            executeCallableStatement(connection, SqlUtils.INSERT_AUDIT_TABLE);
+            executeCallableStatement(connection, "commit");
+        }
+    }
+
     /**
      * This method returns next SCN for mining  and also updates MBean metrics
      * We use a configurable limit, because the larger mining range, the slower query from Log Miner content view.
@@ -80,9 +94,14 @@ public class LogMinerHelper {
      * @throws SQLException if anything unexpected happens
      */
     static long getNextScn(Connection connection, long lastProcessesScn, LogMinerMetrics metrics) throws SQLException {
-        long currentScn = getCurrentScn(connection) - 1;
+        long currentScn = getCurrentScn(connection);
         metrics.setCurrentScn(currentScn);
         int miningDiapason = metrics.getMaxBatchSize();
+
+        // it is critical to commit to flush LogWriter buffer
+        executeCallableStatement(connection, SqlUtils.UPDATE_AUDIT_TABLE + currentScn);
+        executeCallableStatement(connection, "commit");
+
         return currentScn < (lastProcessesScn + miningDiapason) ? currentScn : lastProcessesScn + miningDiapason;
     }
 
@@ -184,7 +203,7 @@ public class LogMinerHelper {
      * @throws SQLException if anything unexpected happens
      */
     private static Map<String, String> getRedoLogStatus(Connection connection) throws SQLException {
-        return getMap(connection, SqlUtils.REDO_LOGS_STATUS, "unknown");
+        return getMap(connection, SqlUtils.REDO_LOGS_STATUS, UNKNOWN);
     }
 
     /**
@@ -194,7 +213,7 @@ public class LogMinerHelper {
      */
     private static int getSwitchCount(Connection connection) {
         try {
-            Map<String, String> total = getMap(connection, SqlUtils.SWITCH_HISTORY_TOTAL_COUNT, "unknown");
+            Map<String, String> total = getMap(connection, SqlUtils.SWITCH_HISTORY_TOTAL_COUNT, UNKNOWN);
             if (total != null && total.get("total") != null){
                 return Integer.parseInt(total.get("total"));
             }
@@ -236,14 +255,14 @@ public class LogMinerHelper {
 
         final String key = "KEY";
         String validateGlobalLogging = "SELECT '" + key + "', " + " SUPPLEMENTAL_LOG_DATA_ALL from V$DATABASE";
-        Map<String, String> globalLogging = getMap(connection, validateGlobalLogging, "unknown");
+        Map<String, String> globalLogging = getMap(connection, validateGlobalLogging, UNKNOWN);
         if ("no".equalsIgnoreCase(globalLogging.get(key))) {
             tableIds.forEach(table -> {
                 String tableName = table.schema() + "." + table.table();
                 try {
                     String validateTableLevelLogging = String.format("SELECT '%s', LOG_GROUP_TYPE FROM DBA_LOG_GROUPS WHERE LOG_GROUP_TYPE='ALL COLUMN LOGGING' AND OWNER ='%s' AND TABLE_NAME = '%s'", key,
                             table.schema().toUpperCase(), table.table().toUpperCase());
-                    Map<String, String> tableLogging = getMap(connection, validateTableLevelLogging, "unknown");
+                    Map<String, String> tableLogging = getMap(connection, validateTableLevelLogging, UNKNOWN);
                     if (tableLogging.get(key) == null) {
                         String alterTableStatement = "ALTER TABLE " + tableName + " ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS";
                         LOGGER.info("altering table {} for supplemental logging", table.table());
@@ -301,7 +320,7 @@ public class LogMinerHelper {
         for (String file : logFilesNamesForMining) {
             String addLogFileStatement = SqlUtils.getAddLogFileStatement("DBMS_LOGMNR.ADDFILE", file);
             executeCallableStatement(connection, addLogFileStatement);
-            LOGGER.debug("add log file to the mining session = {}", file);
+            LOGGER.trace("add log file to the mining session = {}", file);
         }
 
         LOGGER.debug("Last mined SCN: {}, Log file list to mine: {}\n", lastProcessedScn, logFilesForMining);
@@ -360,6 +379,16 @@ public class LogMinerHelper {
                 result.put(rs.getString(1), value);
             }
             return result;
+        }
+    }
+
+    private static String getStringResult(Connection connection, String query) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(query);
+             ResultSet rs = statement.executeQuery()) {
+            if (rs.next()) {
+                return rs.getString(1);
+            }
+            return null;
         }
     }
 

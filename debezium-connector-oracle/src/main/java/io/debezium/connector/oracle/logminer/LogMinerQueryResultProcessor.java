@@ -119,7 +119,7 @@ public class LogMinerQueryResultProcessor {
             //Rollback
             if (operationCode == RowMapper.ROLLBACK) {
                 if (transactionalBuffer.rollback(txId, logMessage)){
-                    LOGGER.debug("ROLLBACK, {}", logMessage);
+                    LOGGER.trace("ROLLBACK, {}", logMessage);
                     rollbackCounter++;
                     cumulativeRollbackTime = cumulativeRollbackTime.plus(Duration.between(iterationStart, Instant.now()));
                 }
@@ -128,9 +128,8 @@ public class LogMinerQueryResultProcessor {
 
             // DDL
             if (operationCode == RowMapper.DDL) {
-                LOGGER.debug("DDL: {}, REDO_SQL: {}", logMessage, redo_sql);
+                LOGGER.info("DDL: {}, REDO_SQL: {}", logMessage, redo_sql);
                 continue;
-                // todo parse, add to the collection.
             }
 
             // MISSING_SCN
@@ -144,12 +143,11 @@ public class LogMinerQueryResultProcessor {
                 LOGGER.trace("DML,  {}, sql {}", logMessage, redo_sql);
                 dmlCounter++;
                 iterationStart = Instant.now();
-                dmlParser.parse(redo_sql, schema.getTables(), txId);
+                LogMinerRowLcr rowLcr = dmlParser.parse(redo_sql, schema.getTables(), txId);
 //                    dmlParser.parse(redo_sql, schema.getTables());
                 cumulativeParseTime = cumulativeParseTime.plus(Duration.between(iterationStart, Instant.now()));
                 iterationStart = Instant.now();
 
-                LogMinerRowLcr rowLcr = dmlParser.getDmlChange();
                 LOGGER.trace("parsed record: {}" , rowLcr);
                 if (rowLcr == null || redo_sql == null) {
                     LOGGER.warn("Following statement was not parsed: {}, details: {}", redo_sql, logMessage);
