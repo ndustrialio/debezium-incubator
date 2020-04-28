@@ -8,7 +8,6 @@ package io.debezium.connector.oracle.logminer;
 import io.debezium.connector.oracle.OracleConnection;
 import io.debezium.connector.oracle.OracleConnectorConfig;
 import io.debezium.jdbc.JdbcConnection;
-import io.debezium.relational.TableId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,12 +18,13 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -120,6 +120,21 @@ public class LogMinerHelper {
             metrics.setSwitchCount(counter);
         } catch (SQLException e) {
             LOGGER.error("Cannot update metrics");
+        }
+    }
+
+
+    /**
+     * Calculate time difference between database and connector
+     * @param connection connection
+     * @return difference in milliseconds
+     */
+    static Long getTimeDifference(Connection connection) {
+        try {
+            Long dbCurrentMillis = getLongResult(connection, SqlUtils.CURRENT_MILLIS);
+            return Duration.between(Instant.now(), Instant.ofEpochMilli(dbCurrentMillis)).toMillis();
+        } catch (SQLException e) {
+            return 0L;
         }
     }
 
@@ -239,45 +254,28 @@ public class LogMinerHelper {
     }
 
     /**
-     * This method checks if supplemental logging was set on the database level. If so it just logs this info.
-     * If database level supplemental logging was not set, the method checks if each table has it and set it.
+     * This method checks if supplemental logging was set on the database level. This is critical check, cannot work if not.
      * @param jdbcConnection oracle connection on logminer level
      * @param connection conn
      * @param pdbName pdb name
-     * @param tableIds whitelisted tables
      * @throws SQLException if anything unexpected happens
      */
-    static void setSupplementalLoggingForWhitelistedTables(OracleConnection jdbcConnection, Connection connection, String pdbName,
-                                                                  Set<TableId> tableIds) throws SQLException {
-        if (pdbName != null) {
-            jdbcConnection.setSessionToPdb(pdbName);
-        }
+    static void checkSupplementalLogging(OracleConnection jdbcConnection, Connection connection, String pdbName) throws SQLException {
+        try {
+            if (pdbName != null) {
+                jdbcConnection.setSessionToPdb(pdbName);
+            }
 
-        final String key = "KEY";
-        String validateGlobalLogging = "SELECT '" + key + "', " + " SUPPLEMENTAL_LOG_DATA_ALL from V$DATABASE";
-        Map<String, String> globalLogging = getMap(connection, validateGlobalLogging, UNKNOWN);
-        if ("no".equalsIgnoreCase(globalLogging.get(key))) {
-            tableIds.forEach(table -> {
-                String tableName = table.schema() + "." + table.table();
-                try {
-                    String validateTableLevelLogging = String.format("SELECT '%s', LOG_GROUP_TYPE FROM DBA_LOG_GROUPS WHERE LOG_GROUP_TYPE='ALL COLUMN LOGGING' AND OWNER ='%s' AND TABLE_NAME = '%s'", key,
-                            table.schema().toUpperCase(), table.table().toUpperCase());
-                    Map<String, String> tableLogging = getMap(connection, validateTableLevelLogging, UNKNOWN);
-                    if (tableLogging.get(key) == null) {
-                        String alterTableStatement = "ALTER TABLE " + tableName + " ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS";
-                        LOGGER.info("altering table {} for supplemental logging", table.table());
-                        executeCallableStatement(connection, alterTableStatement);
-                    }
-                } catch (SQLException e) {
-                    throw new RuntimeException("Cannot set supplemental logging for table " + tableName, e);
-                }
-            });
-        } else {
-            LOGGER.warn("Supplemental logging is set on global level, setting individual table supplemental logging was skipped");
-        }
-
-        if (pdbName != null) {
-            jdbcConnection.resetSessionToCdb();
+            final String key = "KEY";
+            String validateGlobalLogging = "SELECT '" + key + "', " + " SUPPLEMENTAL_LOG_DATA_ALL from V$DATABASE";
+            Map<String, String> globalLogging = getMap(connection, validateGlobalLogging, UNKNOWN);
+            if ("no".equalsIgnoreCase(globalLogging.get(key))) {
+                throw new RuntimeException("Supplemental logging was not set");
+            }
+        } finally {
+            if (pdbName != null) {
+                jdbcConnection.resetSessionToCdb();
+            }
         }
     }
 
@@ -312,7 +310,12 @@ public class LogMinerHelper {
 
         Map<String, Long> logFilesForMining = getLogFilesForOffsetScn(connection, lastProcessedScn);
         if (logFilesForMining.isEmpty()) {
-            throw new IllegalStateException("The online log files do not contain offset SCN, re-snapshot is required.");
+            throw new IllegalStateException("The online log files do not contain offset SCN: " + lastProcessedScn + ", re-snapshot is required.");
+        }
+
+        int redoLogGroupSize = getRedoLogGroupSize(connection);
+        if (logFilesForMining.size() == redoLogGroupSize) {
+            throw new IllegalStateException("All online log files needed for mining the offset SCN: " + lastProcessedScn + ", re-snapshot is required.");
         }
 
         List<String> logFilesNamesForMining = logFilesForMining.entrySet().stream().map(Map.Entry::getKey).collect(Collectors.toList());
@@ -348,6 +351,15 @@ public class LogMinerHelper {
         return Optional.empty();
     }
 
+    /**
+     * get size of online REDO groups
+     * @param connection connection
+     * @return size
+     */
+    static int getRedoLogGroupSize(Connection connection) throws SQLException {
+        Map<String, String> allOnlineRedoLogFiles = getMap(connection, SqlUtils.ALL_ONLINE_LOGS, "-1");
+        return allOnlineRedoLogFiles.size();
+    }
 
     /**
      * This method returns all online log files, starting from one which contains offset SCN and ending with one containing largest SCN
@@ -392,4 +404,13 @@ public class LogMinerHelper {
         }
     }
 
+    private static Long getLongResult(Connection connection, String query) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(query);
+             ResultSet rs = statement.executeQuery()) {
+            if (rs.next()) {
+                return rs.getLong(1);
+            }
+            return System.currentTimeMillis();
+        }
+    }
 }

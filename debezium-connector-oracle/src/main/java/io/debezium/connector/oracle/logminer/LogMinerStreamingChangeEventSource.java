@@ -26,11 +26,13 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.SQLRecoverableException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * A {@link StreamingChangeEventSource} based on Oracle's LogMiner utility.
@@ -104,6 +106,8 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
 
                 startScn = offsetContext.getScn();
                 LogMinerHelper.createAuditTable(connection);
+                LOGGER.trace("current millis {}, db time {}", System.currentTimeMillis(), LogMinerHelper.getTimeDifference(connection));
+                transactionalBufferMetrics.setTimeDifference(new AtomicLong(LogMinerHelper.getTimeDifference(connection)));
 
                 long oldestScnInOnlineRedo = LogMinerHelper.getFirstOnlineLogScn(connection);
                 if (startScn < oldestScnInOnlineRedo) {
@@ -112,7 +116,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
 
                 // 1. Configure Log Miner to mine online redo logs
                 LogMinerHelper.setNlsSessionParameters(jdbcConnection);
-                LogMinerHelper.setSupplementalLoggingForWhitelistedTables(jdbcConnection, connection, connectorConfig.getPdbName(), schema.tableIds());
+                LogMinerHelper.checkSupplementalLogging(jdbcConnection, connection, connectorConfig.getPdbName());
 
                 LOGGER.debug("Data dictionary catalog = {}", strategy.getValue());
 
@@ -153,15 +157,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                                 LogMinerHelper.buildDataDictionary(connection);
                             }
 
-                            // Abandon long running transactions
-                            Optional<Long> lastScnToAbandonTransactions = LogMinerHelper.getLastScnFromTheOldestOnlineRedo(connection, offsetContext.getScn());
-                            lastScnToAbandonTransactions.ifPresent(nextOffsetScn -> {
-                                transactionalBuffer.abandonLongTransactions(nextOffsetScn);
-                                LOGGER.debug("After abandoning, offset before: {}, offset after:{}", offsetContext.getScn(), nextOffsetScn);
-                                offsetContext.setScn(nextOffsetScn);
-                                updateStartScn();
-                            });
-
+                            abandonOldTransactionsIfExist(connection);
                             LogMinerHelper.setRedoLogFilesForMining(connection, startScn);
                         }
 
@@ -220,6 +216,16 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                 LOGGER.info("LogMiner metrics dump: {}", logMinerMetrics.toString());
             }
         }
+    }
+
+    private void abandonOldTransactionsIfExist(Connection connection) throws SQLException {
+        Optional<Long> lastScnToAbandonTransactions = LogMinerHelper.getLastScnFromTheOldestOnlineRedo(connection, offsetContext.getScn());
+        lastScnToAbandonTransactions.ifPresent(nextOffsetScn -> {
+            transactionalBuffer.abandonLongTransactions(nextOffsetScn);
+            LOGGER.debug("After abandoning, offset before: {}, offset after:{}", offsetContext.getScn(), nextOffsetScn);
+            offsetContext.setScn(nextOffsetScn);
+            updateStartScn();
+        });
     }
 
     private void updateStartScn() {

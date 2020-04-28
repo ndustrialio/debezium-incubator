@@ -46,6 +46,9 @@ public class LogMinerQueryResultProcessor {
     private final String catalogName;
     private final Clock clock;
     private final Logger LOGGER = LoggerFactory.getLogger(LogMinerQueryResultProcessor.class);
+    private long currentOffsetScn = 0;
+    private long currentOffsetCommitScn = 0;
+
 
     public LogMinerQueryResultProcessor(ChangeEventSource.ChangeEventSourceContext context, LogMinerMetrics metrics,
                                         TransactionalBuffer transactionalBuffer, SimpleDmlParser dmlParser,
@@ -150,7 +153,7 @@ public class LogMinerQueryResultProcessor {
 
                 LOGGER.trace("parsed record: {}" , rowLcr);
                 if (rowLcr == null || redo_sql == null) {
-                    LOGGER.warn("Following statement was not parsed: {}, details: {}", redo_sql, logMessage);
+                    LOGGER.trace("Following statement was not parsed: {}, details: {}", redo_sql, logMessage);
                     continue;
                 }
 
@@ -179,6 +182,14 @@ public class LogMinerQueryResultProcessor {
                         }
                         if (operationCode == 2) {
                             transactionalBufferMetrics.incrementUfvDelete();
+                        }
+                    }
+                    if ("inv_wi".equalsIgnoreCase(tableName)) {
+                        if (operationCode == 1) {
+                            transactionalBufferMetrics.incrementWiInsert();
+                        }
+                        if (operationCode == 2) {
+                            transactionalBufferMetrics.incrementWiDelete();
                         }
                     }
 
@@ -211,6 +222,11 @@ public class LogMinerQueryResultProcessor {
         metrics.setProcessedCapturedBatchDuration(Duration.between(startTime, Instant.now()));
         metrics.setCapturedDmlCount(dmlCounter);
         if (dmlCounter > 0 || commitCounter > 0 || rollbackCounter > 0) {
+            if (currentOffsetScn == offsetContext.getScn() && currentOffsetCommitScn != offsetContext.getCommitScn()) {
+                LOGGER.warn("offset SCN {} did not change, the oldest transaction was not committed. Offset commit SCN: {}", currentOffsetScn, offsetContext.getCommitScn());
+            }
+            currentOffsetScn = offsetContext.getScn();
+            currentOffsetCommitScn = offsetContext.getCommitScn();
             LOGGER.debug("{} DMLs, {} Commits, {} Rollbacks were processed in {} milliseconds, commit time:{}, rollback time: {}, parse time:{}, " +
                             "other time:{}, lag:{}, offset scn:{}, offset commit scn:{}, active transactions:{}",
                     dmlCounter, commitCounter, rollbackCounter, (Duration.between(startTime, Instant.now()).toMillis()),
