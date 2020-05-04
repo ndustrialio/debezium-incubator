@@ -26,10 +26,8 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -86,21 +84,21 @@ public final class TransactionalBuffer {
     /**
      * @return largest last SCN in the buffer among all transactions
      */
-    public BigDecimal getLargestScn() {
+    BigDecimal getLargestScn() {
         return largestScn;
     }
 
     /**
      * @return rolled back transactions
      */
-    public Set<String> getRolledBackTransactionIds() {
+    Set<String> getRolledBackTransactionIds() {
         return new HashSet<>(rolledBackTransactionIds);
     }
 
     /**
      * Reset Largest SCN
      */
-    public void resetLargestScn(Long value) {
+    void resetLargestScn(Long value) {
         if (value != null) {
             largestScn = new BigDecimal(value);
         } else {
@@ -136,21 +134,6 @@ public final class TransactionalBuffer {
             // todo this should never happen, delete when tested and confirmed
             if (rolledBackTransactionIds.contains(transactionId)) {
                 LOGGER.warn("Ignore DML for rolled back transaction: SCN={}, REDO_SQL={}", scn, redoSql);
-                return;
-            }
-
-            if (!transaction.flatRedo.add(redoSql)) {
-                LOGGER.warn("Ignored duplicated capture as of SCN={}, transaction= {}, REDO_SQL={}", scn, transactionId, redoSql);
-
-                // todo delete it after stowplan deletion
-                if (redoSql.contains("INV_UNIT_FCY_VISIT")){
-                    if (redoSql.contains("insert into ")) {
-                        metrics.ifPresent(m -> m.decrementUfvInsert());
-                    }
-                    if (redoSql.contains("delete from ")) {
-                        metrics.ifPresent(m -> m.decrementUfvDelete());
-                    }
-                }
                 return;
             }
 
@@ -363,18 +346,15 @@ public final class TransactionalBuffer {
     private static final class Transaction {
 
         private final BigDecimal firstScn;
-        // this is SCN candidate, not actual COMMITTED_SCN
         private BigDecimal lastScn;
         private final List<CommitCallback> commitCallbacks;
-        private final NavigableMap<BigDecimal, List<String>> redoSqlMap;
-        private final Set<String> flatRedo;
+        private final Map<BigDecimal, List<String>> redoSqlMap;
 
         private Transaction(BigDecimal firstScn) {
             this.firstScn = firstScn;
             this.commitCallbacks = new ArrayList<>();
-            this.redoSqlMap = new TreeMap<>();
+            this.redoSqlMap = new HashMap<>();
             this.lastScn = firstScn;
-            flatRedo = new HashSet();
         }
 
         private void addRedoSql(BigDecimal scn, String redoSql) {
@@ -386,7 +366,6 @@ public final class TransactionalBuffer {
             } else {
                 sqlList.add(redoSql);
             }
-            flatRedo.add(redoSql);
         }
 
         @Override
