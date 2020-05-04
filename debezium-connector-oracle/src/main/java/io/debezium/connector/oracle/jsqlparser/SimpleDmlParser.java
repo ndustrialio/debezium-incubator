@@ -80,7 +80,10 @@ public class SimpleDmlParser {
      */
     public LogMinerRowLcr parse(String dmlContent, Tables tables, String txId){
         try {
-            if (dmlContent == null) {
+
+             // If a table contains Spatial data type, DML input generates two entries in REDO LOG.
+            // First with actual statement and second with NULL. It is not relevant at this point
+             if (dmlContent == null) {
                 LOGGER.debug("Cannot parse NULL , transaction: {}", txId);
                 return null;
             }

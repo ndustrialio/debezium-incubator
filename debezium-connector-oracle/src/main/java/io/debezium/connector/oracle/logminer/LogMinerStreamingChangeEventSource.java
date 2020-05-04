@@ -91,10 +91,9 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
      * This is the loop to get changes from LogMiner
      *
      * @param context change event source context
-     * @throws InterruptedException an exception
      */
     @Override
-    public void execute(ChangeEventSourceContext context) throws InterruptedException {
+    public void execute(ChangeEventSourceContext context) {
         Metronome metronome;
 
         // The top outer loop gives the resiliency on the network disconnections. This is critical for cloud deployment.
@@ -138,11 +137,10 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     metronome = Metronome.sleeper(Duration.ofMillis(logMinerMetrics.getMillisecondToSleepBetweenMiningQuery()), clock);
 
                     endScn = LogMinerHelper.getNextScn(connection, startScn, logMinerMetrics);
-                    // this is to let LogWriter to finish it's job
+                    // this is to reduce the DB impact
                     metronome.pause();
 
-                    LOGGER.debug("startScn: {}, endScn: {}", startScn, endScn);
-
+                    LOGGER.trace("startScn: {}, endScn: {}", startScn, endScn);
                     String possibleNewCurrentLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
 
                     if (!currentRedoLogFile.equals(possibleNewCurrentLogFile)) {

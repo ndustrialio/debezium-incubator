@@ -33,7 +33,7 @@ import java.time.Instant;
  * On commit it executes all registered callbacks, which dispatch ChangeRecords.
  * This also calculates metrics
  */
-public class LogMinerQueryResultProcessor {
+class LogMinerQueryResultProcessor {
 
     private final ChangeEventSource.ChangeEventSourceContext context;
     private final LogMinerMetrics metrics;
@@ -50,7 +50,7 @@ public class LogMinerQueryResultProcessor {
     private long currentOffsetCommitScn = 0;
 
 
-    public LogMinerQueryResultProcessor(ChangeEventSource.ChangeEventSourceContext context, LogMinerMetrics metrics,
+    LogMinerQueryResultProcessor(ChangeEventSource.ChangeEventSourceContext context, LogMinerMetrics metrics,
                                         TransactionalBuffer transactionalBuffer, SimpleDmlParser dmlParser,
                                         OracleOffsetContext offsetContext, OracleDatabaseSchema schema,
                                         EventDispatcher<TableId> dispatcher, TransactionalBufferMetrics transactionalBufferMetrics,
@@ -72,7 +72,7 @@ public class LogMinerQueryResultProcessor {
      * @param resultSet the info from Log Miner view
      * @return number of processed DMLs from the given resultSet
      */
-    public int processResult(ResultSet resultSet) {
+    int processResult(ResultSet resultSet) {
         int dmlCounter = 0;
         int commitCounter = 0;
         int rollbackCounter = 0;
@@ -147,11 +147,9 @@ public class LogMinerQueryResultProcessor {
                 dmlCounter++;
                 iterationStart = Instant.now();
                 LogMinerRowLcr rowLcr = dmlParser.parse(redo_sql, schema.getTables(), txId);
-//                    dmlParser.parse(redo_sql, schema.getTables());
                 cumulativeParseTime = cumulativeParseTime.plus(Duration.between(iterationStart, Instant.now()));
                 iterationStart = Instant.now();
 
-                LOGGER.trace("parsed record: {}" , rowLcr);
                 if (rowLcr == null || redo_sql == null) {
                     LOGGER.trace("Following statement was not parsed: {}, details: {}", redo_sql, logMessage);
                     continue;
@@ -226,7 +224,9 @@ public class LogMinerQueryResultProcessor {
                 LOGGER.warn("offset SCN {} did not change, the oldest transaction was not committed. Offset commit SCN: {}", currentOffsetScn, offsetContext.getCommitScn());
             }
             currentOffsetScn = offsetContext.getScn();
-            currentOffsetCommitScn = offsetContext.getCommitScn();
+            if (offsetContext.getCommitScn() != null) {
+                currentOffsetCommitScn = offsetContext.getCommitScn();
+            }
             LOGGER.debug("{} DMLs, {} Commits, {} Rollbacks were processed in {} milliseconds, commit time:{}, rollback time: {}, parse time:{}, " +
                             "other time:{}, lag:{}, offset scn:{}, offset commit scn:{}, active transactions:{}",
                     dmlCounter, commitCounter, rollbackCounter, (Duration.between(startTime, Instant.now()).toMillis()),
