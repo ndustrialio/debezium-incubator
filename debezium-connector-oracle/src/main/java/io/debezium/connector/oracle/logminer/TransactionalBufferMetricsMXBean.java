@@ -113,4 +113,9 @@ public interface TransactionalBufferMetricsMXBean {
     void incrementUfvDelete();
     Long getUfvInsert();
     void incrementUfvInsert();
+
+    Long getWiDelete();
+    void incrementWiDelete();
+    Long getWiInsert();
+    void incrementWiInsert();
 }

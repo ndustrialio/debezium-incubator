@@ -37,11 +37,15 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     private AtomicReference<Set<String>> rolledBackTransactionIds = new AtomicReference<>();
     private Instant startTime;
     private static long MILLIS_PER_SECOND = 1000L;
+    private AtomicLong timeDifference = new AtomicLong();
+
 
 
     // temp todo delete after stowplan testing
     private Long ufvDelete = 0L;
     private Long ufvInsert = 0L;
+    private Long wiDelete = 0L;
+    private Long wiInsert = 0L;
 
     public Long getUfvDelete() {
         return ufvDelete;
@@ -66,12 +70,31 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         this.ufvInsert--;
     }
 
+    @Override
+    public Long getWiDelete() {
+        return wiDelete;
+    }
+
+    @Override
+    public void incrementWiDelete() {
+        this.wiDelete++;
+    }
+
+    @Override
+    public Long getWiInsert() {
+        return wiInsert;
+    }
+
+    @Override
+    public void incrementWiInsert() {
+        wiInsert++;
+    }
+
     TransactionalBufferMetrics(CdcSourceTaskContext taskContext) {
         super(taskContext, "log-miner-transactional-buffer");
         startTime = Instant.now();
         oldestScn.set(-1);
         committedScn.set(-1);
-        lagFromTheSource.set(Duration.ZERO);
         reset();
     }
 
@@ -84,10 +107,15 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         committedScn.set(scn);
     }
 
-    // todo deal with timezones
+    public void setTimeDifference(AtomicLong timeDifference) {
+        this.timeDifference = timeDifference;
+    }
+
     void setLagFromTheSource(Instant changeTime){
         if (changeTime != null) {
-            lagFromTheSource.set(Duration.between(changeTime, Instant.now()));
+//            lagFromTheSource.set(Duration.between(Instant.now(), changeTime.minus(Duration.ofMillis(timeDifference.longValue()))).abs());
+            lagFromTheSource.set(Duration.between(Instant.now(), changeTime).abs());
+
             if (maxLagFromTheSource.get().toMillis() < lagFromTheSource.get().toMillis()) {
                 maxLagFromTheSource.set(lagFromTheSource.get());
             }
@@ -219,6 +247,8 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         lagFromTheSource.set(Duration.ZERO);
         ufvDelete = 0L;
         ufvInsert = 0L;
+        wiInsert = 0L;
+        wiDelete = 0L;
     }
 
     @Override

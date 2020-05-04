@@ -121,7 +121,7 @@ public class ParserUtils {
     /**
      * this is to handle cases when a record contains escape character(s)
      * @param text before parsing we replaced it with double escape, now revert it back
-     * @return
+     * @return string with double slashes
      */
     public static String replaceDoubleBackSlashes(String text){
         if (text != null && text.contains("\\\\")){
