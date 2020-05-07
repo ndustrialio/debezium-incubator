@@ -137,7 +137,14 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     metronome = Metronome.sleeper(Duration.ofMillis(logMinerMetrics.getMillisecondToSleepBetweenMiningQuery()), clock);
 
                     endScn = LogMinerHelper.getNextScn(connection, startScn, logMinerMetrics);
-                    // this is to reduce the DB impact
+                    // adjust sleeping time to optimize DB impact and catchup faster when lag is large
+                    if (transactionalBufferMetrics.getLagFromSource() < 2000) {
+                        logMinerMetrics.incrementSleepingTime();
+                    }
+                    if (transactionalBufferMetrics.getLagFromSource() > 10_000) {
+                        logMinerMetrics.resetSleepingTime();
+                    }
+                    LOGGER.trace("sleeping for {} milliseconds", logMinerMetrics.getMillisecondToSleepBetweenMiningQuery());
                     metronome.pause();
 
                     LOGGER.trace("startScn: {}, endScn: {}", startScn, endScn);
@@ -173,11 +180,6 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     ResultSet res = fetchFromMiningView.executeQuery();
                     logMinerMetrics.setLastLogMinerQueryDuration(Duration.between(startTime, Instant.now()));
                     int processedCount = processor.processResult(res);
-
-                    if (processedCount < logMinerMetrics.getFetchedRecordSizeLimitToFallAsleep()) {
-                        LOGGER.trace("sleeping for {} milliseconds", logMinerMetrics.getMillisecondToSleepBetweenMiningQuery());
-                        metronome.pause();
-                    }
 
                     updateStartScn();
 

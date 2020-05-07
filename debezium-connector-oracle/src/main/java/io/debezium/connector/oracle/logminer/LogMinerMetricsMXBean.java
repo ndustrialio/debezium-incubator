@@ -97,17 +97,27 @@ public interface LogMinerMetricsMXBean {
      * sets number of milliseconds for connector to sleep before fetching another batch from the Log Miner view
      * @param milliseconds to sleep
      */
-    void setMillisecondToSleepBetweenMiningQuery(int milliseconds);
+    void setMillisecondToSleepBetweenMiningQuery(Integer milliseconds);
 
     /**
      * @return number of fetched records from Log Miner view. It serves as a trigger point for connector to sleep.
      * This helps in reducing database impact by mining query by making it less frequent
      */
-    int getFetchedRecordSizeLimitToFallAsleep();
+    int getFetchedRecordSizeToSleepMore();
 
     /**
      * sets the limit of fetched records from Log Miner view.
      * @param size number of records
      */
-    void setFetchedRecordSizeLimitToFallAsleep(int size);
+    void setFetchedRecordSizeToSleepMore(int size);
+
+    /**
+     * set sleeping time larger
+     */
+    void incrementSleepingTime();
+
+    /**
+     * reset to the minimal value
+     */
+    void resetSleepingTime();
 }

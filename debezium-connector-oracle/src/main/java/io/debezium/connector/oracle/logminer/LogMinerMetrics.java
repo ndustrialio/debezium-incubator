@@ -35,14 +35,16 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     private AtomicReference<Duration> averageProcessedCapturedBatchDuration = new AtomicReference<>();
     private AtomicInteger maxBatchSize = new AtomicInteger();
     private AtomicInteger millisecondToSleepBetweenMiningQuery = new AtomicInteger();
-    private AtomicInteger fetchedRecordSizeLimitToFallAsleep = new AtomicInteger();
+    private AtomicInteger fetchedRecordSizeToSleepMore = new AtomicInteger(); // todo delete later
+    private final int MAX_SLEEP_TIME = 3_000;
+    private final int MIN_SLEEP_TIME = 100;
 
     LogMinerMetrics(CdcSourceTaskContext taskContext) {
         super(taskContext, "log-miner");
 
         maxBatchSize.set(5_000);
         millisecondToSleepBetweenMiningQuery.set(1000);
-        fetchedRecordSizeLimitToFallAsleep.set(50);
+        fetchedRecordSizeToSleepMore.set(50);
 
         currentScn.set(-1);
         capturedDmlCount.set(0);
@@ -154,8 +156,8 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     }
 
     @Override
-    public int getFetchedRecordSizeLimitToFallAsleep() {
-        return fetchedRecordSizeLimitToFallAsleep.get();
+    public int getFetchedRecordSizeToSleepMore() {
+        return fetchedRecordSizeToSleepMore.get();
     }
 
     // MBean accessible setters
@@ -167,16 +169,32 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     }
 
     @Override
-    public void setMillisecondToSleepBetweenMiningQuery(int milliseconds) {
-        if (milliseconds >= 100 && milliseconds <= 5_000){
+    public void setMillisecondToSleepBetweenMiningQuery(Integer milliseconds) {
+        if (milliseconds != null && milliseconds >= MIN_SLEEP_TIME && milliseconds < MAX_SLEEP_TIME){
             millisecondToSleepBetweenMiningQuery.set(milliseconds);
         }
     }
 
     @Override
-    public void setFetchedRecordSizeLimitToFallAsleep(int size) {
+    public void incrementSleepingTime() {
+        int sleepTime = millisecondToSleepBetweenMiningQuery.get();
+        if (sleepTime >= MIN_SLEEP_TIME && sleepTime < MAX_SLEEP_TIME){
+            millisecondToSleepBetweenMiningQuery.getAndAdd(200);
+        }
+    }
+
+    @Override
+    public void resetSleepingTime() {
+        int sleepTime = millisecondToSleepBetweenMiningQuery.get();
+        if (sleepTime >= MIN_SLEEP_TIME && sleepTime < MAX_SLEEP_TIME){
+            millisecondToSleepBetweenMiningQuery.set(100);
+        }
+    }
+
+    @Override
+    public void setFetchedRecordSizeToSleepMore(int size) {
         if (size >= 50 && size <= 200) {
-            fetchedRecordSizeLimitToFallAsleep.set(size);
+            fetchedRecordSizeToSleepMore.set(size);
         }
     }
 
