@@ -228,12 +228,11 @@ class LogMinerQueryResultProcessor {
                 currentOffsetCommitScn = offsetContext.getCommitScn();
             }
             LOGGER.debug("{} DMLs, {} Commits, {} Rollbacks were processed in {} milliseconds, commit time:{}, rollback time: {}, parse time:{}, " +
-                            "other time:{}, lag:{}, offset scn:{}, offset commit scn:{}, active transactions:{}",
+                            "other time:{}, lag:{}, offset scn:{}, offset commit scn:{}, active transactions:{}, sleep time:{}",
                     dmlCounter, commitCounter, rollbackCounter, (Duration.between(startTime, Instant.now()).toMillis()),
-                    cumulativeCommitTime.toMillis(), cumulativeRollbackTime.toMillis(),
-                    cumulativeParseTime.toMillis(), cumulativeOtherTime.toMillis(),
-                    transactionalBufferMetrics.getLagFromSource(), offsetContext.getScn(),
-                    offsetContext.getCommitScn(), transactionalBufferMetrics.getNumberOfActiveTransactions());
+                    cumulativeCommitTime.toMillis(), cumulativeRollbackTime.toMillis(), cumulativeParseTime.toMillis(), cumulativeOtherTime.toMillis(),
+                    transactionalBufferMetrics.getLagFromSource(), offsetContext.getScn(), offsetContext.getCommitScn(),
+                    transactionalBufferMetrics.getNumberOfActiveTransactions(), metrics.getMillisecondToSleepBetweenMiningQuery());
         }
         return dmlCounter;
     }
