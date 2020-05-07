@@ -146,6 +146,10 @@ public class SqlServerConnection extends JdbcConnection {
             final Lsn fromLsn = changeTable.getStartLsn().compareTo(intervalFromLsn) > 0 ? changeTable.getStartLsn() : intervalFromLsn;
             LOGGER.trace("Getting changes for table {} in range[{}, {}]", changeTable, fromLsn, intervalToLsn);
             preparers[idx] = statement -> {
+                String fetchSizeStr = config().asProperties().getProperty("incremental.fetch.size");
+                if (fetchSizeStr != null && fetchSizeStr.trim().length() > 0) {
+                    statement.setFetchSize(Integer.parseInt(fetchSizeStr));
+                }
                 statement.setBytes(1, fromLsn.getBinary());
                 statement.setBytes(2, intervalToLsn.getBinary());
             };
