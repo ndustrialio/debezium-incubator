@@ -108,8 +108,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                 LOGGER.trace("current millis {}, db time {}", System.currentTimeMillis(), LogMinerHelper.getTimeDifference(connection));
                 transactionalBufferMetrics.setTimeDifference(new AtomicLong(LogMinerHelper.getTimeDifference(connection)));
 
-                long oldestScnInOnlineRedo = LogMinerHelper.getFirstOnlineLogScn(connection);
-                if (startScn < oldestScnInOnlineRedo) {
+                if (!isContinuousMining && startScn < LogMinerHelper.getFirstOnlineLogScn(connection)) {
                     throw new RuntimeException("Online REDO LOG files don't contain the offset SCN. Clean offset and start over");
                 }
 

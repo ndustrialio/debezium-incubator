@@ -38,11 +38,12 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     private AtomicInteger fetchedRecordSizeToSleepMore = new AtomicInteger(); // todo delete later
     private final int MAX_SLEEP_TIME = 3_000;
     private final int MIN_SLEEP_TIME = 100;
+    private final int BATCH_SIZE = 10_000;
 
     LogMinerMetrics(CdcSourceTaskContext taskContext) {
         super(taskContext, "log-miner");
 
-        maxBatchSize.set(5_000);
+        maxBatchSize.set(BATCH_SIZE);
         millisecondToSleepBetweenMiningQuery.set(1000);
         fetchedRecordSizeToSleepMore.set(50);
 
@@ -151,7 +152,7 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     }
 
     @Override
-    public int getMillisecondToSleepBetweenMiningQuery() {
+    public Integer getMillisecondToSleepBetweenMiningQuery() {
         return millisecondToSleepBetweenMiningQuery.get();
     }
 
