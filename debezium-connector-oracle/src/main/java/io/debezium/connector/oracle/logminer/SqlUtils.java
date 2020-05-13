@@ -29,15 +29,14 @@ class SqlUtils {
             "            + to_number(to_char(sys_extract_utc(systimestamp), 'SSSSSFF3'))) from dual";
     static final String END_LOGMNR = "BEGIN SYS.DBMS_LOGMNR.END_LOGMNR(); END;";
     static final String OLDEST_FIRST_CHANGE = "SELECT MIN(FIRST_CHANGE#) FROM V$LOG";
-    static final String ALL_ONLINE_LOGS = "SELECT MIN(F.MEMBER) AS FILE_NAME, L.NEXT_CHANGE# AS NEXT_CHANGE " +
-            "            FROM V$LOG L, V$LOGFILE F " +
-            "            WHERE F.GROUP# = L.GROUP# " +
-            "            GROUP BY L.NEXT_CHANGE#" +
-            "            ORDER BY 2";
+    static final String ALL_ONLINE_LOGS = "SELECT MIN(F.MEMBER) AS FILE_NAME, L.NEXT_CHANGE# AS NEXT_CHANGE, F.GROUP# " +
+            " FROM V$LOG L, V$LOGFILE F "+
+            " WHERE F.GROUP# = L.GROUP# AND L.NEXT_CHANGE# > 0 "+
+            " GROUP BY F.GROUP#, L.NEXT_CHANGE# ORDER BY 3";
 
     static final String REDO_LOGS_STATUS = "SELECT F.MEMBER, R.STATUS FROM V$LOGFILE F, V$LOG R WHERE F.GROUP# = R.GROUP# ORDER BY 2";
-    static final String SWITCH_HISTORY_TOTAL_COUNT = "select 'total', count(1) from v$archived_log where first_time > trunc(sysdate)\n" +
-            "and dest_id = (select dest_id from V$ARCHIVE_DEST_STATUS where status='VALID' and type='LOCAL')";
+    static final String SWITCH_HISTORY_TOTAL_COUNT = "select 'total', count(1) from v$archived_log where first_time > trunc(sysdate)" +
+            " and dest_id = (select dest_id from V$ARCHIVE_DEST_STATUS where status='VALID' and type='LOCAL')";
     static final String CURRENT_REDO_LOG_NAME = "select f.member from v$log log, v$logfile f  where log.group#=f.group# and log.status='CURRENT'";
     static final String AUDIT_TABLE_EXISTS = "SELECT '1' AS ONE FROM USER_TABLES WHERE TABLE_NAME = '" + LOGMNR_AUDIT_TABLE + "'";
     static final String AUDIT_TABLE_RECORD_EXISTS = "SELECT '1' AS ONE FROM " + LOGMNR_AUDIT_TABLE;
