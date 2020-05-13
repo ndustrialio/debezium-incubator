@@ -32,6 +32,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -95,6 +96,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     @Override
     public void execute(ChangeEventSourceContext context) {
         Metronome metronome;
+        int processedCount = logMinerMetrics.getFetchedRecordSizeToSleepMore();
 
         // The top outer loop gives the resiliency on the network disconnections. This is critical for cloud deployment.
         while(context.isRunning()) {
@@ -126,7 +128,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     LogMinerHelper.setRedoLogFilesForMining(connection, startScn);
                 }
                 LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
-                String currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
+                Set<String> currentRedoLogFiles = LogMinerHelper.getCurrentRedoLogFiles(connection, logMinerMetrics);
 
                 LogMinerQueryResultProcessor processor = new LogMinerQueryResultProcessor(context, logMinerMetrics, transactionalBuffer,
                         dmlParser, offsetContext, schema, dispatcher, transactionalBufferMetrics, catalogName, clock);
@@ -136,8 +138,9 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     metronome = Metronome.sleeper(Duration.ofMillis(logMinerMetrics.getMillisecondToSleepBetweenMiningQuery()), clock);
 
                     endScn = LogMinerHelper.getNextScn(connection, startScn, logMinerMetrics);
+
                     // adjust sleeping time to optimize DB impact and catchup faster when lag is large
-                    if (transactionalBufferMetrics.getLagFromSource() < 2000) {
+                    if (transactionalBufferMetrics.getLagFromSource() < 2000 && processedCount < logMinerMetrics.getFetchedRecordSizeToSleepMore()) {
                         logMinerMetrics.incrementSleepingTime();
                     }
                     if (transactionalBufferMetrics.getLagFromSource() > 10_000) {
@@ -147,10 +150,10 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     metronome.pause();
 
                     LOGGER.trace("startScn: {}, endScn: {}", startScn, endScn);
-                    String possibleNewCurrentLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
+                    Set<String> possibleNewCurrentLogFile = LogMinerHelper.getCurrentRedoLogFiles(connection, logMinerMetrics);
 
-                    if (!currentRedoLogFile.equals(possibleNewCurrentLogFile)) {
-                        LOGGER.debug("\n\n***** SWITCH occurred *****\n" + " from:{} , to:{} \n\n", currentRedoLogFile, possibleNewCurrentLogFile);
+                    if (!currentRedoLogFiles.equals(possibleNewCurrentLogFile)) {
+                        LOGGER.debug("\n\n***** SWITCH occurred *****\n" + " from:{} , to:{} \n\n", currentRedoLogFiles, possibleNewCurrentLogFile);
 
                         // This is the way to mitigate PGA leak.
                         // With one mining session it grows and maybe there is another way to flush PGA, but at this point we use new mining session
@@ -166,7 +169,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                         }
 
                         LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
-                        currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
+                        currentRedoLogFiles = LogMinerHelper.getCurrentRedoLogFiles(connection, logMinerMetrics);
                     }
 
                     LogMinerHelper.startOnlineMining(connection, startScn, endScn, strategy, isContinuousMining);
@@ -178,7 +181,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
 
                     ResultSet res = fetchFromMiningView.executeQuery();
                     logMinerMetrics.setLastLogMinerQueryDuration(Duration.between(startTime, Instant.now()));
-                    int processedCount = processor.processResult(res);
+                    processedCount = processor.processResult(res);
 
                     updateStartScn();
 
@@ -198,7 +201,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
 //                        LogMinerHelper.endMining(connection);
 //                        LogMinerHelper.setRedoLogFilesForMining(connection, startScn);
 //                        LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
-//                        currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
+//                        currentRedoLogFiles = LogMinerHelper.getCurrentRedoLogFiles(connection, logMinerMetrics);
 //                    }
                 }
             } catch (Throwable e) {

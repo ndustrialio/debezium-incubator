@@ -20,11 +20,13 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -69,7 +71,7 @@ public class LogMinerHelper {
         }
     }
 
-    public static void createAuditTable(Connection connection) throws SQLException{
+    public static void createAuditTable(Connection connection) throws SQLException {
         String tableExists = getStringResult(connection, SqlUtils.AUDIT_TABLE_EXISTS);
         if (tableExists == null) {
             executeCallableStatement(connection, SqlUtils.CREATE_AUDIT_TABLE);
@@ -161,27 +163,27 @@ public class LogMinerHelper {
     }
 
     /**
-     * This method query the database to get CURRENT online redo log file
+     * This method query the database to get CURRENT online redo log file(s). Multiple is applicable for RAC systems.
      * @param connection connection to reuse
      * @param metrics MBean accessible metrics
-     * @return full redo log file name, including path
+     * @return full redo log file name(s), including path
      * @throws SQLException if anything unexpected happens
      */
-    static String getCurrentRedoLogFile(Connection connection, LogMinerMetrics metrics) throws SQLException {
+    static Set<String> getCurrentRedoLogFiles(Connection connection, LogMinerMetrics metrics) throws SQLException {
         String checkQuery = SqlUtils.CURRENT_REDO_LOG_NAME;
 
-        String fileName = "";
+        Set<String> fileNames = new HashSet<>();
         PreparedStatement st = connection.prepareStatement(checkQuery);
         ResultSet result = st.executeQuery();
         while (result.next()) {
-            fileName = result.getString(1);
-            LOGGER.trace(" Current Redo log fileName: {} ",  fileName);
+            fileNames.add(result.getString(1));
+            LOGGER.trace(" Current Redo log fileName: {} ",  fileNames);
         }
         st.close();
         result.close();
 
-        metrics.setCurrentLogFileName(fileName);
-        return fileName;
+        metrics.setCurrentLogFileName(fileNames);
+        return fileNames;
     }
 
     /**
@@ -270,7 +272,7 @@ public class LogMinerHelper {
             String validateGlobalLogging = "SELECT '" + key + "', " + " SUPPLEMENTAL_LOG_DATA_ALL from V$DATABASE";
             Map<String, String> globalLogging = getMap(connection, validateGlobalLogging, UNKNOWN);
             if ("no".equalsIgnoreCase(globalLogging.get(key))) {
-                throw new RuntimeException("Supplemental logging was not set");
+                throw new RuntimeException("Supplemental logging was not set. Use command: ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS");
             }
         } finally {
             if (pdbName != null) {
@@ -356,9 +358,8 @@ public class LogMinerHelper {
      * @param connection connection
      * @return size
      */
-    static int getRedoLogGroupSize(Connection connection) throws SQLException {
-        Map<String, String> allOnlineRedoLogFiles = getMap(connection, SqlUtils.ALL_ONLINE_LOGS, "-1");
-        return allOnlineRedoLogFiles.size();
+    private static int getRedoLogGroupSize(Connection connection) throws SQLException {
+        return getMap(connection, SqlUtils.ALL_ONLINE_LOGS, "-1").size();
     }
 
     /**

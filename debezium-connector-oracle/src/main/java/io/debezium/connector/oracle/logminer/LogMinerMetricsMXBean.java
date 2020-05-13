@@ -22,7 +22,7 @@ public interface LogMinerMetricsMXBean {
      *
      * @return full path or NULL if an exception occurs.
      */
-    String getCurrentRedoLogFileName();
+    String[] getCurrentRedoLogFileName();
 
     /**
      * Exposes states of redo logs: current, active, inactive, unused ...
@@ -104,12 +104,6 @@ public interface LogMinerMetricsMXBean {
      * This helps in reducing database impact by mining query by making it less frequent
      */
     int getFetchedRecordSizeToSleepMore();
-
-    /**
-     * sets the limit of fetched records from Log Miner view.
-     * @param size number of records
-     */
-    void setFetchedRecordSizeToSleepMore(int size);
 
     /**
      * set sleeping time larger
