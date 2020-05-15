@@ -48,6 +48,7 @@ class LogMinerQueryResultProcessor {
     private final Logger LOGGER = LoggerFactory.getLogger(LogMinerQueryResultProcessor.class);
     private long currentOffsetScn = 0;
     private long currentOffsetCommitScn = 0;
+    private long stuckScnCounter = 0;
 
 
     LogMinerQueryResultProcessor(ChangeEventSource.ChangeEventSourceContext context, LogMinerMetrics metrics,
@@ -77,7 +78,6 @@ class LogMinerQueryResultProcessor {
         int commitCounter = 0;
         int rollbackCounter = 0;
         Duration cumulativeCommitTime = Duration.ZERO;
-        Duration cumulativeRollbackTime = Duration.ZERO;
         Duration cumulativeParseTime = Duration.ZERO;
         Duration cumulativeOtherTime = Duration.ZERO;
         Instant startTime = Instant.now();
@@ -124,7 +124,6 @@ class LogMinerQueryResultProcessor {
                 if (transactionalBuffer.rollback(txId, logMessage)){
                     LOGGER.trace("ROLLBACK, {}", logMessage);
                     rollbackCounter++;
-                    cumulativeRollbackTime = cumulativeRollbackTime.plus(Duration.between(iterationStart, Instant.now()));
                 }
                 continue;
             }
@@ -220,20 +219,34 @@ class LogMinerQueryResultProcessor {
         metrics.setProcessedCapturedBatchDuration(Duration.between(startTime, Instant.now()));
         metrics.setCapturedDmlCount(dmlCounter);
         if (dmlCounter > 0 || commitCounter > 0 || rollbackCounter > 0) {
-            if (currentOffsetScn == offsetContext.getScn() && currentOffsetCommitScn != offsetContext.getCommitScn()) {
-                LOGGER.warn("offset SCN {} did not change, the oldest transaction was not committed. Offset commit SCN: {}", currentOffsetScn, offsetContext.getCommitScn());
-            }
+            warnStuckScn();
             currentOffsetScn = offsetContext.getScn();
             if (offsetContext.getCommitScn() != null) {
                 currentOffsetCommitScn = offsetContext.getCommitScn();
             }
-            LOGGER.debug("{} DMLs, {} Commits, {} Rollbacks were processed in {} milliseconds, commit time:{}, rollback time: {}, parse time:{}, " +
-                            "other time:{}, lag:{}, offset scn:{}, offset commit scn:{}, active transactions:{}, sleep time:{}",
+            LOGGER.debug("{} DMLs, {} Commits, {} Rollbacks. Timing in msec (total:{}, commit:{}, parse:{}, other:{}). " +
+                            "Lag:{}. Offset scn:{}. Offset commit scn:{}. Active transactions:{}. Sleep time:{}",
                     dmlCounter, commitCounter, rollbackCounter, (Duration.between(startTime, Instant.now()).toMillis()),
-                    cumulativeCommitTime.toMillis(), cumulativeRollbackTime.toMillis(), cumulativeParseTime.toMillis(), cumulativeOtherTime.toMillis(),
+                    cumulativeCommitTime.toMillis(), cumulativeParseTime.toMillis(), cumulativeOtherTime.toMillis(),
                     transactionalBufferMetrics.getLagFromSource(), offsetContext.getScn(), offsetContext.getCommitScn(),
                     transactionalBufferMetrics.getNumberOfActiveTransactions(), metrics.getMillisecondToSleepBetweenMiningQuery());
         }
         return dmlCounter;
+    }
+
+    /**
+     * This method is warning if a long running transaction is discovered and could be abandoned in the future.
+     * The criteria is the offset SCN remains the same in five mining cycles
+     */
+    private void warnStuckScn() {
+        if (currentOffsetScn == offsetContext.getScn() && currentOffsetCommitScn != offsetContext.getCommitScn()) {
+            stuckScnCounter++;
+            // warn only once
+            if (stuckScnCounter == 5) {
+                LOGGER.warn("Offset SCN {} did not change in five mining cycles, hence the oldest transaction was not committed. Offset commit SCN: {}", currentOffsetScn, offsetContext.getCommitScn());
+            }
+        } else {
+            stuckScnCounter = 0;
+        }
     }
 }

@@ -215,8 +215,8 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     @Override
     public String toString() {
         return "LogMinerMetrics{" +
-                "currentScn=" + currentScn.get() +
-                ", currentLogFileName=" + currentLogFileName.get() +
+                "currentEndScn=" + currentScn.get() +
+                ", currentLogFileNames=" + Arrays.toString(currentLogFileName.get()) +
                 ", redoLogStatus=" + Arrays.toString(redoLogStatus.get()) +
                 ", capturedDmlCount=" + capturedDmlCount.get() +
                 ", switchCounter=" + switchCounter.get() +
