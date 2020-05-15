@@ -148,11 +148,11 @@ public final class TransactionalBuffer {
 
     /**
      * @param transactionId transaction identifier
-     * @param commitScn SCN of the commit
+     * @param commitScn SCN of the commit.
      * @param offsetContext Oracle offset
      * @param timestamp     commit timestamp
      * @param context       context to check that source is running
-     * @param debugMessage  todo delete
+     * @param debugMessage  message
      * @return true if committed transaction is in the buffer and was not processed already
      */
     boolean commit(String transactionId, BigDecimal commitScn, OracleOffsetContext offsetContext, Timestamp timestamp,
@@ -163,12 +163,6 @@ public final class TransactionalBuffer {
             return false;
         }
 
-        if (commitScn.longValue() <= lastCommittedScn.longValue()) {
-            LOGGER.debug("Ignoring transaction {}, it was already processed in previous mining cycle", transactionId);
-            transactions.remove(transactionId);
-            return false;
-        }
-
         calculateLargestScn();
         transaction = transactions.remove(transactionId);
         BigDecimal smallestScn = calculateSmallestScn();
@@ -176,7 +170,7 @@ public final class TransactionalBuffer {
         taskCounter.incrementAndGet();
         abandonedTransactionIds.remove(transactionId);
 
-        if (offsetContext.getCommitScn() != null && offsetContext.getCommitScn() >= commitScn.longValue()) {
+        if ((offsetContext.getCommitScn() != null && offsetContext.getCommitScn() >= commitScn.longValue()) || lastCommittedScn.longValue() >= commitScn.longValue()) {
             LOGGER.info("Transaction {} was already processed, ignore. Committed SCN in offset is {}, commit SCN of the transaction is {}",
                     transactionId, offsetContext.getCommitScn(), commitScn);
             metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
@@ -217,7 +211,7 @@ public final class TransactionalBuffer {
      * Clears registered callbacks for given transaction identifier.
      *
      * @param transactionId transaction id
-     * @param debugMessage  todo delete in the future
+     * @param debugMessage  message
      * @return true if the rollback is for a transaction in the buffer
      */
     boolean rollback(String transactionId, String debugMessage) {

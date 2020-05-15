@@ -212,7 +212,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                 LOGGER.error("Mining session was stopped due to the {} ", e.toString());
                 throw new RuntimeException(e);
             } finally {
-                LOGGER.info("lastProcessedScn={}, endScn={}, offsetContext.getScn()={}", startScn, endScn, offsetContext.getScn());
+                LOGGER.info("startScn={}, endScn={}, offsetContext.getScn()={}", startScn, endScn, offsetContext.getScn());
                 LOGGER.info("Transactional buffer metrics dump: {}", transactionalBufferMetrics.toString());
                 LOGGER.info("Transactional buffer dump: {}", transactionalBuffer.toString());
                 LOGGER.info("LogMiner metrics dump: {}", logMinerMetrics.toString());
