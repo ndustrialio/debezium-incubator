@@ -200,7 +200,7 @@ public class OracleDmlParserTest {
 
         String dml = "update \"" + FULL_TABLE_NAME + "\" set \"col1\" = '6', col2 = 'text', col3 = 'text', col4 = NULL " +
                 "where ID = 5 and COL1 = 6 and \"COL2\" = 'text' " +
-                "and COL3 = 'text' and COL4 IS NULL and \"COL5\" IS NULL and COL6 IS NULL and COL7 IS NULL and COL9 IS NULL and COL10 IS NULL and COL12 IS NULL " +
+                "and COL3 = Unsupported Type and COL4 IS NULL and \"COL5\" IS NULL and COL6 IS NULL and COL7 IS NULL and COL9 IS NULL and COL10 IS NULL and COL12 IS NULL " +
                 "and COL8 = TO_TIMESTAMP('2019-05-14 02:28:32') and col11 = " + SPATIAL_DATA + ";";
 
         LogMinerRowLcr record = sqlDmlParser.parse(dml, tables, "");
@@ -208,6 +208,7 @@ public class OracleDmlParserTest {
                 && record.getOldValues().size() == record.getNewValues().size()
                 && record.getNewValues().containsAll(record.getOldValues());
         assertThat(pass);
+        assertThat(record.getOldValues().get(4).getColumnData()).isNull();
     }
 
     @Test

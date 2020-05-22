@@ -96,7 +96,6 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     @Override
     public void execute(ChangeEventSourceContext context) {
         Metronome metronome;
-        int processedCount = logMinerMetrics.getFetchedRecordSizeToSleepMore();
 
         // The top outer loop gives the resiliency on the network disconnections. This is critical for cloud deployment.
         while(context.isRunning()) {
@@ -137,15 +136,8 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                 while (context.isRunning()) {
                     metronome = Metronome.sleeper(Duration.ofMillis(logMinerMetrics.getMillisecondToSleepBetweenMiningQuery()), clock);
 
-                    endScn = LogMinerHelper.getNextScn(connection, startScn, logMinerMetrics);
+                    endScn = LogMinerHelper.getEndScn(connection, startScn, logMinerMetrics);
 
-                    // adjust sleeping time to optimize DB impact and catchup faster when lag is large
-                    if (transactionalBufferMetrics.getLagFromSource() < 2000 && processedCount < logMinerMetrics.getFetchedRecordSizeToSleepMore()) {
-                        logMinerMetrics.incrementSleepingTime();
-                    }
-                    if (transactionalBufferMetrics.getLagFromSource() > 10_000) {
-                        logMinerMetrics.resetSleepingTime();
-                    }
                     LOGGER.trace("sleeping for {} milliseconds", logMinerMetrics.getMillisecondToSleepBetweenMiningQuery());
                     metronome.pause();
 
@@ -175,13 +167,13 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     LogMinerHelper.startOnlineMining(connection, startScn, endScn, strategy, isContinuousMining);
 
                     Instant startTime = Instant.now();
-                    fetchFromMiningView.setFetchSize(10000); // todo parametrize
+                    fetchFromMiningView.setFetchSize(10_000);
                     fetchFromMiningView.setLong(1, startScn);
                     fetchFromMiningView.setLong(2, endScn);
 
                     ResultSet res = fetchFromMiningView.executeQuery();
                     logMinerMetrics.setLastLogMinerQueryDuration(Duration.between(startTime, Instant.now()));
-                    processedCount = processor.processResult(res);
+                    processor.processResult(res);
 
                     updateStartScn();
 
@@ -222,10 +214,10 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
 
     private void abandonOldTransactionsIfExist(Connection connection) throws SQLException {
         Optional<Long> lastScnToAbandonTransactions = LogMinerHelper.getLastScnFromTheOldestOnlineRedo(connection, offsetContext.getScn());
-        lastScnToAbandonTransactions.ifPresent(nextOffsetScn -> {
-            transactionalBuffer.abandonLongTransactions(nextOffsetScn);
-            LOGGER.debug("After abandoning, offset before: {}, offset after:{}", offsetContext.getScn(), nextOffsetScn);
-            offsetContext.setScn(nextOffsetScn);
+        lastScnToAbandonTransactions.ifPresent(thresholdScn -> {
+            LOGGER.debug("All transactions with first SCN <= {} will be abandoned, offset: {}", thresholdScn, offsetContext.getScn());
+            transactionalBuffer.abandonLongTransactions(thresholdScn);
+            offsetContext.setScn(thresholdScn);
             updateStartScn();
         });
     }

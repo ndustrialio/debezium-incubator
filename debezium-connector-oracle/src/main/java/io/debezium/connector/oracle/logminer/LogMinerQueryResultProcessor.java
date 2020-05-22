@@ -224,7 +224,7 @@ class LogMinerQueryResultProcessor {
             if (offsetContext.getCommitScn() != null) {
                 currentOffsetCommitScn = offsetContext.getCommitScn();
             }
-            LOGGER.debug("{} DMLs, {} Commits, {} Rollbacks. Timing in msec (total:{}, commit:{}, parse:{}, other:{}). " +
+            LOGGER.debug("{} DMLs, {} Commits, {} Rollbacks. Millis - (total:{}, commit:{}, parse:{}, other:{}). " +
                             "Lag:{}. Offset scn:{}. Offset commit scn:{}. Active transactions:{}. Sleep time:{}",
                     dmlCounter, commitCounter, rollbackCounter, (Duration.between(startTime, Instant.now()).toMillis()),
                     cumulativeCommitTime.toMillis(), cumulativeParseTime.toMillis(), cumulativeOtherTime.toMillis(),
