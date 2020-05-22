@@ -96,6 +96,7 @@ public class SimpleDmlParser {
             }
             // this is to handle cases when a record contains escape character(s). This parser throws.
             dmlContent = dmlContent.replaceAll("\\\\", "\\\\\\\\");
+            dmlContent = dmlContent.replaceAll("= Unsupported Type", "= null"); // todo address spatial data types
 
             newColumnValues.clear();
             oldColumnValues.clear();

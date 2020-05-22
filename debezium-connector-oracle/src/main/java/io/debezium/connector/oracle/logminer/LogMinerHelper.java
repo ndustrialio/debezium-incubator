@@ -91,20 +91,24 @@ public class LogMinerHelper {
      *
      * @param connection container level database connection
      * @param metrics MBean accessible metrics
-     * @param lastProcessesScn offset SCN
+     * @param startScn start SCN
      * @return next SCN to mine to
      * @throws SQLException if anything unexpected happens
      */
-    static long getNextScn(Connection connection, long lastProcessesScn, LogMinerMetrics metrics) throws SQLException {
+    static long getEndScn(Connection connection, long startScn, LogMinerMetrics metrics) throws SQLException {
         long currentScn = getCurrentScn(connection);
         metrics.setCurrentScn(currentScn);
-        int miningDiapason = metrics.getMaxBatchSize();
+        int miningDiapason = metrics.getBatchSize();
 
-        // it is critical to commit to flush LogWriter buffer
+        // it is critical to flush LogWriter buffer
         executeCallableStatement(connection, SqlUtils.UPDATE_AUDIT_TABLE + currentScn);
         executeCallableStatement(connection, "commit");
 
-        return currentScn < (lastProcessesScn + miningDiapason) ? currentScn : lastProcessesScn + miningDiapason;
+        // adjust sleeping time to optimize DB impact and catchup faster when behind
+        boolean isNextScnCloseToDbCurrent = currentScn < (startScn + miningDiapason);
+        metrics.changeSleepingTime(isNextScnCloseToDbCurrent);
+
+        return isNextScnCloseToDbCurrent ? currentScn : startScn + miningDiapason;
     }
 
     /**
@@ -333,22 +337,21 @@ public class LogMinerHelper {
 
     /**
      * This method returns SCN as a watermark to abandon long lasting transactions.
-     * This is a way to mitigate long lasting transactions when it could fall out of online redo logs range
      *
      * @param connection connection
-     * @param lastProcessedScn current offset
+     * @param offsetScn current offset
      * @return Optional last SCN in a redo log
      * @throws SQLException if anything unexpected happens
      */
-    static Optional<Long> getLastScnFromTheOldestOnlineRedo(Connection connection, Long lastProcessedScn) throws SQLException {
+    static Optional<Long> getLastScnFromTheOldestOnlineRedo(Connection connection, Long offsetScn) throws SQLException {
+
         Map<String, String> allOnlineRedoLogFiles = getMap(connection, SqlUtils.ALL_ONLINE_LOGS, "-1");
+        Map<String, Long> logFilesToMine = getLogFilesForOffsetScn(connection, offsetScn);
 
-        Map<String, Long> logFilesToMine = getLogFilesForOffsetScn(connection, lastProcessedScn);
         LOGGER.debug("Redo log size = {}, needed for mining files size = {}", allOnlineRedoLogFiles.size(), logFilesToMine.size());
-
         if (allOnlineRedoLogFiles.size() - logFilesToMine.size() <= 1){
-            List<Long> lastScnInOldestOnlineRedo = logFilesToMine.entrySet().stream().map(Map.Entry::getValue).collect(Collectors.toList());
-            return lastScnInOldestOnlineRedo.stream().min(Long::compareTo);
+            List<Long> lastScnsInRedoLogToMine = logFilesToMine.entrySet().stream().map(Map.Entry::getValue).collect(Collectors.toList());
+            return lastScnsInRedoLogToMine.stream().min(Long::compareTo);
         }
         return Optional.empty();
     }

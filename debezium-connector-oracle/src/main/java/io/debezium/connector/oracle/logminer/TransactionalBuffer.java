@@ -148,14 +148,14 @@ public final class TransactionalBuffer {
 
     /**
      * @param transactionId transaction identifier
-     * @param commitScn SCN of the commit.
+     * @param scn SCN of the commit.
      * @param offsetContext Oracle offset
      * @param timestamp     commit timestamp
      * @param context       context to check that source is running
      * @param debugMessage  message
-     * @return true if committed transaction is in the buffer and was not processed already
+     * @return true if committed transaction is in the buffer, was not processed yet and processed now
      */
-    boolean commit(String transactionId, BigDecimal commitScn, OracleOffsetContext offsetContext, Timestamp timestamp,
+    boolean commit(String transactionId, BigDecimal scn, OracleOffsetContext offsetContext, Timestamp timestamp,
                    ChangeEventSource.ChangeEventSourceContext context, String debugMessage) {
 
         Transaction transaction = transactions.get(transactionId);
@@ -170,9 +170,11 @@ public final class TransactionalBuffer {
         taskCounter.incrementAndGet();
         abandonedTransactionIds.remove(transactionId);
 
-        if ((offsetContext.getCommitScn() != null && offsetContext.getCommitScn() >= commitScn.longValue()) || lastCommittedScn.longValue() >= commitScn.longValue()) {
-            LOGGER.info("Transaction {} was already processed, ignore. Committed SCN in offset is {}, commit SCN of the transaction is {}",
-                    transactionId, offsetContext.getCommitScn(), commitScn);
+        // On the restarting connector, we start from SCN in the offset. There is possibility to commit a transaction(s) which were already committed.
+        // Currently we cannot use ">=", because we may lose normal commit which may happen at the same time. TODO use audit table to prevent duplications
+        if ((offsetContext.getCommitScn() != null && offsetContext.getCommitScn() > scn.longValue()) || lastCommittedScn.longValue() > scn.longValue()) {
+            LOGGER.warn("Transaction {} was already processed, ignore. Committed SCN in offset is {}, commit SCN of the transaction is {}, last committed SCN is {}",
+                    transactionId, offsetContext.getCommitScn(), scn, lastCommittedScn);
             metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
             return false;
         }
@@ -186,14 +188,14 @@ public final class TransactionalBuffer {
                     if (!context.isRunning()) {
                         return;
                     }
-                    callback.execute(timestamp, smallestScn, commitScn, --counter);
+                    callback.execute(timestamp, smallestScn, scn, --counter);
                 }
 
-                lastCommittedScn = new BigDecimal(commitScn.longValue());
+                lastCommittedScn = new BigDecimal(scn.longValue());
                 metrics.ifPresent(TransactionalBufferMetrics::incrementCommittedTransactions);
                 metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
                 metrics.ifPresent(m -> m.incrementCommittedDmlCounter(commitCallbacks.size()));
-                metrics.ifPresent(m -> m.setCommittedScn(commitScn.longValue()));
+                metrics.ifPresent(m -> m.setCommittedScn(scn.longValue()));
             } catch (InterruptedException e) {
                 LOGGER.error("Thread interrupted during running", e);
                 Thread.currentThread().interrupt();
@@ -218,7 +220,7 @@ public final class TransactionalBuffer {
 
         Transaction transaction = transactions.get(transactionId);
         if (transaction != null) {
-            LOGGER.debug("Transaction {} rolled back, {}", transactionId, debugMessage);
+            LOGGER.debug("Transaction rolled back, {}", debugMessage);
 
             calculateLargestScn(); // in case if largest SCN was in this transaction
             transactions.remove(transactionId);

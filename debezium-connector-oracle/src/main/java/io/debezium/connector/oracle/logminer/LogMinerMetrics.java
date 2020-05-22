@@ -34,27 +34,24 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     private AtomicReference<Duration> lastProcessedCapturedBatchDuration = new AtomicReference<>();
     private AtomicInteger processedCapturedBatchCount = new AtomicInteger();
     private AtomicReference<Duration> averageProcessedCapturedBatchDuration = new AtomicReference<>();
-    private AtomicInteger maxBatchSize = new AtomicInteger();
+    private AtomicInteger batchSize = new AtomicInteger();
     private AtomicInteger millisecondToSleepBetweenMiningQuery = new AtomicInteger();
-    private AtomicInteger fetchedRecordSizeToSleepMore = new AtomicInteger();
 
     private final int MAX_SLEEP_TIME = 3_000;
     private final int DEFAULT_SLEEP_TIME = 1_000;
     private final int MIN_SLEEP_TIME = 100;
 
-    private final int MIN_BATCH_SIZE = 100;
+    private final int MIN_BATCH_SIZE = 1_000;
     private final int MAX_BATCH_SIZE = 100_000;
-    private final int DEFAULT_BATCH_SIZE = 10_000;
+    private final int DEFAULT_BATCH_SIZE = 5_000;
 
     private final int SLEEP_TIME_INCREMENT = 200;
-    private final int SIZE_TO_SLEEP_LONGER = 50;
 
     LogMinerMetrics(CdcSourceTaskContext taskContext) {
         super(taskContext, "log-miner");
 
-        maxBatchSize.set(DEFAULT_BATCH_SIZE);
+        batchSize.set(DEFAULT_BATCH_SIZE);
         millisecondToSleepBetweenMiningQuery.set(DEFAULT_SLEEP_TIME);
-        fetchedRecordSizeToSleepMore.set(SIZE_TO_SLEEP_LONGER);
 
         currentScn.set(-1);
         capturedDmlCount.set(0);
@@ -156,8 +153,8 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     }
 
     @Override
-    public int getMaxBatchSize() {
-        return maxBatchSize.get();
+    public int getBatchSize() {
+        return batchSize.get();
     }
 
     @Override
@@ -165,16 +162,11 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
         return millisecondToSleepBetweenMiningQuery.get();
     }
 
-    @Override
-    public int getFetchedRecordSizeToSleepMore() {
-        return fetchedRecordSizeToSleepMore.get();
-    }
-
     // MBean accessible setters
     @Override
-    public void setMaxBatchSize(int size) {
+    public void setBatchSize(int size) {
         if (size >= MIN_BATCH_SIZE && size <= MAX_BATCH_SIZE) {
-            maxBatchSize.set(size);
+            batchSize.set(size);
         }
     }
 
@@ -186,18 +178,11 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     }
 
     @Override
-    public void incrementSleepingTime() {
+    public void changeSleepingTime(boolean increment) {
         int sleepTime = millisecondToSleepBetweenMiningQuery.get();
+        int change = increment ?  SLEEP_TIME_INCREMENT : -SLEEP_TIME_INCREMENT;
         if (sleepTime >= MIN_SLEEP_TIME && sleepTime < MAX_SLEEP_TIME){
-            millisecondToSleepBetweenMiningQuery.getAndAdd(SLEEP_TIME_INCREMENT);
-        }
-    }
-
-    @Override
-    public void resetSleepingTime() {
-        int sleepTime = millisecondToSleepBetweenMiningQuery.get();
-        if (sleepTime >= MIN_SLEEP_TIME && sleepTime < MAX_SLEEP_TIME){
-            millisecondToSleepBetweenMiningQuery.set(MIN_SLEEP_TIME);
+            millisecondToSleepBetweenMiningQuery.getAndAdd(change);
         }
     }
 
@@ -226,9 +211,8 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
                 ", lastProcessedCapturedBatchDuration=" + lastProcessedCapturedBatchDuration.get() +
                 ", processedCapturedBatchCount=" + processedCapturedBatchCount.get() +
                 ", averageProcessedCapturedBatchDuration=" + averageProcessedCapturedBatchDuration.get() +
-                ", maxBatchSize=" + maxBatchSize.get() +
                 ", millisecondToSleepBetweenMiningQuery=" + millisecondToSleepBetweenMiningQuery.get() +
-                ", maxBatchSize=" + maxBatchSize.get() +
+                ", batchSize=" + batchSize.get() +
                 '}';
     }
 }
