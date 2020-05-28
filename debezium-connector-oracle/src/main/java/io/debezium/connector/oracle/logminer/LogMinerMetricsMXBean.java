@@ -82,7 +82,7 @@ public interface LogMinerMetricsMXBean {
     int getBatchSize();
 
     /**
-     * this gives ability to manipulate maximum number of entries in Log Miner view to fetch.
+     * this gives ability to manipulate number of entries in Log Miner view to fetch.
      * It has limits to prevent abnormal values
      * @param size limit
      */

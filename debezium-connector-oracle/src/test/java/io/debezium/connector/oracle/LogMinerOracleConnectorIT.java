@@ -10,7 +10,12 @@ import io.debezium.relational.RelationalDatabaseConnectorConfig;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.temporal.ChronoField;
@@ -29,6 +34,22 @@ public class LogMinerOracleConnectorIT extends OracleConnectorIT {
                 .with(RelationalDatabaseConnectorConfig.TABLE_WHITELIST, "ORA19C_PDB01\\.DEBEZIUM\\.CUSTOMER")
                 .with(OracleConnectorConfig.CONNECTOR_ADAPTER, "LogMiner");
         OracleConnectorIT.beforeClass();
+    }
+
+    @Test
+    public void shouldTakeTimeDifference() throws Exception {
+        String stmt  = "select current_timestamp from dual";
+        try (Connection conn = connection.connection(true);
+             PreparedStatement ps = conn.prepareStatement(stmt);
+             ResultSet rs = ps.executeQuery()
+            ) {
+            rs.next();
+            java.sql.Timestamp ts = rs.getTimestamp(1);
+            Instant fromDb = ts.toInstant();
+            Instant now  = Instant.now();
+            long diff = Duration.between(fromDb, now).toMillis();
+            System.out.println("diff:" + diff);
+        }
     }
 
     @Test

@@ -49,8 +49,6 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     private final OracleDatabaseSchema schema;
     private final OracleOffsetContext offsetContext;
     private final TransactionalBuffer transactionalBuffer;
-    // todo introduce injection of appropriate parser
-//    private final OracleDmlParser dmlParser;
     private final SimpleDmlParser dmlParser;
     private final String catalogName;
     private OracleConnectorConfig connectorConfig;
@@ -71,17 +69,12 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
         this.schema = schema;
         this.offsetContext = offsetContext;
         OracleChangeRecordValueConverter converters = new OracleChangeRecordValueConverter(jdbcConnection);
-
         this.connectorConfig = connectorConfig;
-
-//        this.dmlParser = new OracleDmlParser(true, connectorConfig.getDatabaseName(), connectorConfig.getSchemaName(),
-//                converters);
         this.catalogName = (connectorConfig.getPdbName() != null) ? connectorConfig.getPdbName() : connectorConfig.getDatabaseName();
         this.dmlParser = new SimpleDmlParser(catalogName, connectorConfig.getSchemaName(), converters);
         this.transactionalBufferMetrics = new TransactionalBufferMetrics(taskContext);
         this.transactionalBufferMetrics.register(LOGGER);
         transactionalBuffer = new TransactionalBuffer(connectorConfig.getLogicalName(), errorHandler, transactionalBufferMetrics);
-
         this.logMinerMetrics = new LogMinerMetrics(taskContext);
         this.logMinerMetrics.register(LOGGER);
         this.strategy = connectorConfig.getLogMiningStrategy();
@@ -176,13 +169,10 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     processor.processResult(res);
 
                     updateStartScn();
-
-                    // get largest scn from the last uncommitted transaction and set as last processed scn
                     LOGGER.trace("largest scn = {}", transactionalBuffer.getLargestScn());
 
                     // update SCN in offset context only if buffer is empty, otherwise we update offset in TransactionalBuffer
                     if (transactionalBuffer.isEmpty()) {
-                        // When the buffer is empty, move mining boundaries forward
                         offsetContext.setScn(startScn);
                         transactionalBuffer.resetLargestScn(null);
                     }
@@ -191,17 +181,16 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                     // we don't do it for other modes to save time on building data dictionary
 //                    if (strategy == OracleConnectorConfig.LogMiningStrategy.ONLINE_CATALOG) {
 //                        LogMinerHelper.endMining(connection);
-//                        LogMinerHelper.setRedoLogFilesForMining(connection, startScn);
 //                        LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
 //                        currentRedoLogFiles = LogMinerHelper.getCurrentRedoLogFiles(connection, logMinerMetrics);
 //                    }
                 }
             } catch (Throwable e) {
                 if (connectionProblem(e)) {
-                    LOGGER.warn("Disconnection occurred. {} ", e.toString());
+                    LogMinerHelper.logWarn(transactionalBufferMetrics, "Disconnection occurred. {} ", e.toString());
                     continue;
                 }
-                LOGGER.error("Mining session was stopped due to the {} ", e.toString());
+                LogMinerHelper.logError(transactionalBufferMetrics, "Mining session was stopped due to the {} ", e.toString());
                 throw new RuntimeException(e);
             } finally {
                 LOGGER.info("startScn={}, endScn={}, offsetContext.getScn()={}", startScn, endScn, offsetContext.getScn());
@@ -215,7 +204,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     private void abandonOldTransactionsIfExist(Connection connection) throws SQLException {
         Optional<Long> lastScnToAbandonTransactions = LogMinerHelper.getLastScnFromTheOldestOnlineRedo(connection, offsetContext.getScn());
         lastScnToAbandonTransactions.ifPresent(thresholdScn -> {
-            LOGGER.debug("All transactions with first SCN <= {} will be abandoned, offset: {}", thresholdScn, offsetContext.getScn());
+            LogMinerHelper.logWarn(transactionalBufferMetrics, "All transactions with first SCN <= {} will be abandoned, offset: {}", thresholdScn, offsetContext.getScn());
             transactionalBuffer.abandonLongTransactions(thresholdScn);
             offsetContext.setScn(thresholdScn);
             updateStartScn();

@@ -26,7 +26,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -47,7 +46,7 @@ public final class TransactionalBuffer {
     private final ExecutorService executor;
     private final AtomicInteger taskCounter;
     private final ErrorHandler errorHandler;
-    private Optional<TransactionalBufferMetrics> metrics;
+    private TransactionalBufferMetrics metrics;
     private final Set<String> abandonedTransactionIds;
 
     // storing rolledBackTransactionIds is for debugging purposes to check what was rolled back to research, todo delete in future releases
@@ -62,19 +61,15 @@ public final class TransactionalBuffer {
      * Constructor to create a new instance.
      *
      * @param logicalName  logical name
-     * @param errorHandler error handler
-     * @param metrics      metrics MBean exposed
+     * @param errorHandler logError handler
+     * @param metrics      metrics MBean
      */
     TransactionalBuffer(String logicalName, ErrorHandler errorHandler, TransactionalBufferMetrics metrics) {
         this.transactions = new HashMap<>();
         this.executor = Threads.newSingleThreadExecutor(OracleConnector.class, logicalName, "transactional-buffer");
         this.taskCounter = new AtomicInteger();
         this.errorHandler = errorHandler;
-        if (metrics != null) {
-            this.metrics = Optional.of(metrics);
-        } else {
-            this.metrics = Optional.empty();
-        }
+        this.metrics = metrics;
         largestScn = BigDecimal.ZERO;
         lastCommittedScn = BigDecimal.ZERO;
         this.abandonedTransactionIds = new HashSet<>();
@@ -117,15 +112,15 @@ public final class TransactionalBuffer {
      */
     void registerCommitCallback(String transactionId, BigDecimal scn, Instant changeTime, String redoSql, CommitCallback callback) {
         if (abandonedTransactionIds.contains(transactionId)) {
-            LOGGER.warn("Another DML for an abandoned transaction {} : {}, ignored", transactionId, redoSql);
+            LogMinerHelper.logWarn(metrics, "Another DML for an abandoned transaction {} : {}, ignored", transactionId, redoSql);
             return;
         }
 
         transactions.computeIfAbsent(transactionId, s -> new Transaction(scn));
 
-        metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
-        metrics.ifPresent(TransactionalBufferMetrics::incrementCapturedDmlCounter);
-        metrics.ifPresent(m -> m.setLagFromTheSource(changeTime));
+        metrics.setActiveTransactions(transactions.size());
+        metrics.incrementCapturedDmlCounter();
+        metrics.calculateLagMetrics(changeTime);
 
         // The transaction object is not a lightweight object anymore having all REDO_SQL stored.
         Transaction transaction = transactions.get(transactionId);
@@ -133,7 +128,7 @@ public final class TransactionalBuffer {
 
             // todo this should never happen, delete when tested and confirmed
             if (rolledBackTransactionIds.contains(transactionId)) {
-                LOGGER.warn("Ignore DML for rolled back transaction: SCN={}, REDO_SQL={}", scn, redoSql);
+                LogMinerHelper.logWarn(metrics, "Ignore DML for rolled back transaction: SCN={}, REDO_SQL={}", scn, redoSql);
                 return;
             }
 
@@ -173,9 +168,9 @@ public final class TransactionalBuffer {
         // On the restarting connector, we start from SCN in the offset. There is possibility to commit a transaction(s) which were already committed.
         // Currently we cannot use ">=", because we may lose normal commit which may happen at the same time. TODO use audit table to prevent duplications
         if ((offsetContext.getCommitScn() != null && offsetContext.getCommitScn() > scn.longValue()) || lastCommittedScn.longValue() > scn.longValue()) {
-            LOGGER.warn("Transaction {} was already processed, ignore. Committed SCN in offset is {}, commit SCN of the transaction is {}, last committed SCN is {}",
+            LogMinerHelper.logWarn(metrics, "Transaction {} was already processed, ignore. Committed SCN in offset is {}, commit SCN of the transaction is {}, last committed SCN is {}",
                     transactionId, offsetContext.getCommitScn(), scn, lastCommittedScn);
-            metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
+            metrics.setActiveTransactions(transactions.size());
             return false;
         }
 
@@ -192,12 +187,12 @@ public final class TransactionalBuffer {
                 }
 
                 lastCommittedScn = new BigDecimal(scn.longValue());
-                metrics.ifPresent(TransactionalBufferMetrics::incrementCommittedTransactions);
-                metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
-                metrics.ifPresent(m -> m.incrementCommittedDmlCounter(commitCallbacks.size()));
-                metrics.ifPresent(m -> m.setCommittedScn(scn.longValue()));
+                metrics.incrementCommittedTransactions();
+                metrics.setActiveTransactions(transactions.size());
+                metrics.incrementCommittedDmlCounter(commitCallbacks.size());
+                metrics.setCommittedScn(scn.longValue());
             } catch (InterruptedException e) {
-                LOGGER.error("Thread interrupted during running", e);
+                LogMinerHelper.logError(metrics, "Thread interrupted during running", e);
                 Thread.currentThread().interrupt();
             } catch (Exception e) {
                 errorHandler.setProducerThrowable(e);
@@ -228,9 +223,9 @@ public final class TransactionalBuffer {
             abandonedTransactionIds.remove(transactionId);
             rolledBackTransactionIds.add(transactionId);
 
-            metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
-            metrics.ifPresent(TransactionalBufferMetrics::incrementRolledBackTransactions);
-            metrics.ifPresent(m -> m.addRolledBackTransactionId(transactionId));
+            metrics.setActiveTransactions(transactions.size());
+            metrics.incrementRolledBackTransactions();
+            metrics.addRolledBackTransactionId(transactionId); // todo decide if we need both metrics
 
             return true;
         }
@@ -262,13 +257,13 @@ public final class TransactionalBuffer {
         while (iter.hasNext()) {
             Map.Entry<String, Transaction> transaction = iter.next();
             if (transaction.getValue().firstScn.compareTo(threshold) <= 0) {
-                LOGGER.warn("Following long running transaction {} will be abandoned and ignored: {} ", transaction.getKey(), transaction.getValue().toString());
+                LogMinerHelper.logWarn(metrics, "Following long running transaction {} will be abandoned and ignored: {} ", transaction.getKey(), transaction.getValue().toString());
                 abandonedTransactionIds.add(transaction.getKey());
                 iter.remove();
                 calculateLargestScn();
 
-                metrics.ifPresent(t -> t.addAbandonedTransactionId(transaction.getKey()));
-                metrics.ifPresent(m -> m.setActiveTransactions(transactions.size()));
+                metrics.addAbandonedTransactionId(transaction.getKey());
+                metrics.setActiveTransactions(transactions.size());
             }
         }
     }
@@ -279,7 +274,7 @@ public final class TransactionalBuffer {
                 .map(transaction -> transaction.firstScn)
                 .min(BigDecimal::compareTo)
                 .orElseThrow(() -> new DataException("Cannot calculate smallest SCN"));
-        metrics.ifPresent(m -> m.setOldestScn(scn == null ? -1 : scn.longValue()));
+        metrics.setOldestScn(scn == null ? -1 : scn.longValue());
         return scn;
     }
 
@@ -318,7 +313,7 @@ public final class TransactionalBuffer {
                 executor.shutdownNow();
             }
         } catch (InterruptedException e) {
-            LOGGER.error("Thread interrupted during shutdown", e);
+            LogMinerHelper.logError(metrics, "Thread interrupted during shutdown", e);
         }
     }
 
