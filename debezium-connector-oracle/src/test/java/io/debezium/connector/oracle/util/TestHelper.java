@@ -19,20 +19,25 @@ import java.sql.SQLException;
 
 public class TestHelper {
 
-    //private static final String HOST = "10.47.100.32"; //Roby
+//    private static final String HOST = "10.47.100.32"; //Roby
     private static final String HOST = "10.47.100.62"; //Development
+    private static final String SCHEMA_USER = "debezium";
+    private static final String SCHEMA_PASS = "dbz";
+    private static final String DATABASE = "ORA19C_PDB01"; //dev
+//    private static final String DATABASE = "ORCLPDB";//qa
     public static final Path DB_HISTORY_PATH = Testing.Files.createTestingPath("file-db-history-connect.txt").toAbsolutePath();
 
-    //public static final String CONNECTOR_USER = "c##xstrm";
-    public static final String CONNECTOR_USER = "c##logminer";
+//    public static final String CONNECTOR_USER = "c##xstrm";// qa
+    public static final String CONNECTOR_USER = "c##logminer"; // dev
+//    public static final String CONNECTOR_USER_PASS = "xs";         //qa
+    public static final String CONNECTOR_USER_PASS = "lm"; //dev
 
     public static JdbcConfiguration defaultJdbcConfig() {
         return JdbcConfiguration.copy(Configuration.fromSystemProperties("database."))
                 .withDefault(JdbcConfiguration.HOSTNAME, HOST)
                 .withDefault(JdbcConfiguration.PORT, 1521)
                 .withDefault(JdbcConfiguration.USER, CONNECTOR_USER)
-                //.withDefault(JdbcConfiguration.PASSWORD, "xs")         //Roby todo, revert
-                .withDefault(JdbcConfiguration.PASSWORD, "lm")  //development
+                .withDefault(JdbcConfiguration.PASSWORD, CONNECTOR_USER_PASS)
                 .withDefault(JdbcConfiguration.DATABASE, "ORA19C")
                 .build();
     }
@@ -50,10 +55,10 @@ public class TestHelper {
         );
 
         return builder.with(RelationalDatabaseConnectorConfig.SERVER_NAME, "server1")
-                .with(OracleConnectorConfig.PDB_NAME, "ORA19C_PDB01")
+                .with(OracleConnectorConfig.PDB_NAME, DATABASE)
                 .with(OracleConnectorConfig.XSTREAM_SERVER_NAME, "dbzxout")
                 .with(OracleConnectorConfig.DATABASE_HISTORY, FileDatabaseHistory.class)
-                .with(OracleConnectorConfig.SCHEMA_NAME, "DEBEZIUM")
+                .with(OracleConnectorConfig.SCHEMA_NAME, SCHEMA_USER)
                 .with(FileDatabaseHistory.FILE_PATH, DB_HISTORY_PATH);
     }
 
@@ -92,9 +97,9 @@ public class TestHelper {
         return JdbcConfiguration.copy(Configuration.fromSystemProperties("database."))
                 .withDefault(JdbcConfiguration.HOSTNAME, HOST)
                 .withDefault(JdbcConfiguration.PORT, 1521)
-                .withDefault(JdbcConfiguration.USER, "debezium")
-                .withDefault(JdbcConfiguration.PASSWORD, "dbz")
-                .withDefault(JdbcConfiguration.DATABASE, "ORA19C_PDB01")
+                .withDefault(JdbcConfiguration.USER, SCHEMA_USER)
+                .withDefault(JdbcConfiguration.PASSWORD, SCHEMA_PASS)
+                .withDefault(JdbcConfiguration.DATABASE, DATABASE)
                 .build();
     }
 
@@ -107,7 +112,7 @@ public class TestHelper {
                 .withDefault(JdbcConfiguration.PORT, 1521)
                 .withDefault(JdbcConfiguration.USER, "sys as sysdba")
                 .withDefault(JdbcConfiguration.PASSWORD, "top_secret")
-                .withDefault(JdbcConfiguration.DATABASE, "ORA19C_PDB01")
+                .withDefault(JdbcConfiguration.DATABASE, DATABASE)
                 .build();
     }
 

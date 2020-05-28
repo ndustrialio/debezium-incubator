@@ -15,6 +15,7 @@ import io.debezium.pipeline.ErrorHandler;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import static org.mockito.Mockito.mock;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -70,7 +71,8 @@ public class TransactionalBufferTest {
                 .maxQueueSize(DEFAULT_MAX_QUEUE_SIZE)
                 .build();
         errorHandler = new ErrorHandler(OracleConnector.class, SERVER_NAME, queue, () -> { });
-        transactionalBuffer = new TransactionalBuffer(SERVER_NAME, errorHandler, null);
+        TransactionalBufferMetrics metrics = mock(TransactionalBufferMetrics.class);
+        transactionalBuffer = new TransactionalBuffer(SERVER_NAME, errorHandler, metrics);
     }
 
     @After

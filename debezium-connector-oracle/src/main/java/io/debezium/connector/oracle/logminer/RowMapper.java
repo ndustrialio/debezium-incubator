@@ -43,61 +43,61 @@ public class RowMapper {
     private static final int TABLE_NAME = 7;
     private static final int SEG_OWNER = 8;
 
-    public static int getOperationCode(ResultSet rs) {
+    public static int getOperationCode(TransactionalBufferMetrics metrics, ResultSet rs) {
         try {
             return rs.getInt(OPERATION_CODE);
         } catch (SQLException e) {
-            logError(e, "OPERATION_CODE");
+            logError(metrics, e, "OPERATION_CODE");
             return 0;
         }
     }
 
-    public static String getTableName(ResultSet rs)  {
+    public static String getTableName(TransactionalBufferMetrics metrics, ResultSet rs)  {
         try {
             return rs.getString(TABLE_NAME);
         } catch (SQLException e) {
-            logError(e, "TABLE_NAME");
+            logError(metrics, e, "TABLE_NAME");
             return "";
         }
     }
 
-    public static String getSegOwner(ResultSet rs)  {
+    public static String getSegOwner(TransactionalBufferMetrics metrics, ResultSet rs)  {
         try {
             return rs.getString(SEG_OWNER);
         } catch (SQLException e) {
-            logError(e, "SEG_OWNER");
+            logError(metrics, e, "SEG_OWNER");
             return "";
         }
     }
 
-    public static Timestamp getChangeTime(ResultSet rs) {
+    public static Timestamp getChangeTime(TransactionalBufferMetrics metrics, ResultSet rs) {
         try {
             return rs.getTimestamp(CHANGE_TIME);
         } catch (SQLException e) {
-            logError(e, "CHANGE_TIME");
+            logError(metrics, e, "CHANGE_TIME");
             return new Timestamp(Instant.now().getEpochSecond());
         }
     }
 
-    public static BigDecimal getScn(ResultSet rs) {
+    public static BigDecimal getScn(TransactionalBufferMetrics metrics, ResultSet rs) {
         try {
             return rs.getBigDecimal(SCN);
         } catch (SQLException e) {
-            logError(e, "SCN");
+            logError(metrics, e, "SCN");
             return new BigDecimal(-1);
         }
     }
 
-    public static String getTransactionId(ResultSet rs) {
+    public static String getTransactionId(TransactionalBufferMetrics metrics, ResultSet rs) {
         try {
             return DatatypeConverter.printHexBinary(rs.getBytes(TX_ID));
         } catch (SQLException e) {
-            logError(e, "TX_ID");
+            logError(metrics, e, "TX_ID");
             return "";
         }
     }
 
-    public static String getSqlRedo(ResultSet rs) {
+    public static String getSqlRedo(TransactionalBufferMetrics metrics, ResultSet rs) {
         StringBuilder result = new StringBuilder();
         try {
             int csf = rs.getInt(CSF);
@@ -109,7 +109,7 @@ public class RowMapper {
             } else {
                 result = new StringBuilder(rs.getString(SQL_REDO));
                 int lobLimit = 40000; // todo : decide on approach ( XStream chunk option) and Lob limit
-                BigDecimal scn = getScn(rs);
+                BigDecimal scn = getScn(metrics, rs);
                 while (csf == 1) {
                     rs.next();
                     if (lobLimit-- == 0) {
@@ -121,13 +121,13 @@ public class RowMapper {
                 }
             }
         } catch (SQLException e) {
-            logError(e, "SQL_REDO");
+            logError(metrics, e, "SQL_REDO");
         }
         return result.toString();
     }
 
-    static void logError(SQLException e, String s) {
-        LOGGER.error("Cannot get {}. This entry from log miner will be lost due to the {}", s, e);
+    private static void logError(TransactionalBufferMetrics metrics, SQLException e, String s) {
+        LogMinerHelper.logError(metrics, "Cannot get {}. This entry from log miner will be lost due to the {}", s, e);
     }
 
     public static TableId getTableId(String catalogName, ResultSet rs) throws SQLException {

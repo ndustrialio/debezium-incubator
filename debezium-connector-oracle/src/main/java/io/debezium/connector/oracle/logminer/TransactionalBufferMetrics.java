@@ -32,12 +32,15 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     private AtomicLong committedDmlCounter = new AtomicLong();
     private AtomicReference<Duration> maxLagFromTheSource = new AtomicReference<>();
     private AtomicReference<Duration> minLagFromTheSource = new AtomicReference<>();
-    private AtomicReference<Duration> totalLagsFromTheSource = new AtomicReference<>();
+    private AtomicReference<Duration> averageLagsFromTheSource = new AtomicReference<>();
     private AtomicReference<Set<String>> abandonedTransactionIds = new AtomicReference<>();
     private AtomicReference<Set<String>> rolledBackTransactionIds = new AtomicReference<>();
     private Instant startTime;
     private static long MILLIS_PER_SECOND = 1000L;
     private AtomicLong timeDifference = new AtomicLong();
+    private AtomicInteger errorCounter = new AtomicInteger();
+    private AtomicInteger warningCounter = new AtomicInteger();
+    private AtomicInteger scnFreezeCounter = new AtomicInteger();
 
 
 
@@ -46,6 +49,8 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     private Long ufvInsert = 0L;
     private Long wiDelete = 0L;
     private Long wiInsert = 0L;
+    private Long rtdDelete = 0L;
+    private Long rtdInsert = 0L;
 
     public Long getUfvDelete() {
         return ufvDelete;
@@ -55,10 +60,6 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         this.ufvDelete++;
     }
 
-    public void decrementUfvDelete() {
-        this.ufvDelete--;
-    }
-
     public Long getUfvInsert() {
         return ufvInsert;
     }
@@ -66,10 +67,6 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     public void incrementUfvInsert() {
         this.ufvInsert++;
     }
-    public void decrementUfvInsert() {
-        this.ufvInsert--;
-    }
-
     @Override
     public Long getWiDelete() {
         return wiDelete;
@@ -90,11 +87,32 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         wiInsert++;
     }
 
+    @Override
+    public Long getRTDDelete() {
+        return rtdDelete;
+    }
+
+    @Override
+    public void incrementRTDDelete() {
+        rtdDelete++;
+    }
+
+    @Override
+    public Long getRTDInsert() {
+        return rtdInsert;
+    }
+
+    @Override
+    public void incrementRTDInsert() {
+        rtdInsert++;
+    }
+
     TransactionalBufferMetrics(CdcSourceTaskContext taskContext) {
         super(taskContext, "log-miner-transactional-buffer");
         startTime = Instant.now();
         oldestScn.set(-1);
         committedScn.set(-1);
+        timeDifference.set(0);
         reset();
     }
 
@@ -111,10 +129,10 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         this.timeDifference = timeDifference;
     }
 
-    void setLagFromTheSource(Instant changeTime){
+    void calculateLagMetrics(Instant changeTime){
         if (changeTime != null) {
-//            lagFromTheSource.set(Duration.between(Instant.now(), changeTime.minus(Duration.ofMillis(timeDifference.longValue()))).abs());
-            lagFromTheSource.set(Duration.between(Instant.now(), changeTime).abs());
+            Instant correctedChangeTime = changeTime.plus(Duration.ofMillis(timeDifference.longValue()));
+            lagFromTheSource.set(Duration.between(correctedChangeTime, Instant.now()));
 
             if (maxLagFromTheSource.get().toMillis() < lagFromTheSource.get().toMillis()) {
                 maxLagFromTheSource.set(lagFromTheSource.get());
@@ -122,7 +140,12 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
             if (minLagFromTheSource.get().toMillis() > lagFromTheSource.get().toMillis()) {
                 minLagFromTheSource.set(lagFromTheSource.get());
             }
-            totalLagsFromTheSource.set(totalLagsFromTheSource.get().plus(lagFromTheSource.get()));
+
+            if (averageLagsFromTheSource.get().isZero()) {
+                averageLagsFromTheSource.set(lagFromTheSource.get());
+            } else {
+                averageLagsFromTheSource.set(averageLagsFromTheSource.get().plus(lagFromTheSource.get()).dividedBy(2));
+            }
         }
     }
 
@@ -158,6 +181,30 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         if (transactionId != null) {
             rolledBackTransactionIds.get().add(transactionId);
         }
+    }
+
+    /**
+     * This is to increase logged logError counter.
+     * There are other ways to monitor the log, but this is just to check if there are any.
+     */
+    void incrementErrorCounter() {
+        errorCounter.incrementAndGet();
+    }
+
+    /**
+     * This is to increase logged warning counter
+     * There are other ways to monitor the log, but this is just to check if there are any.
+     */
+    void incrementWarningCounter() {
+        warningCounter.incrementAndGet();
+    }
+
+    /**
+     * This counter to accumulate number of encountered observations when SCN does not change in the offset.
+     * This call indicates an uncommitted oldest transaction in the buffer.
+     */
+    void incrementScnFreezeCounter() {
+        scnFreezeCounter.incrementAndGet();
     }
 
     // implemented getters
@@ -218,7 +265,7 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
 
     @Override
     public long getAverageLagFromSource() {
-        return totalLagsFromTheSource.get().toMillis()/(capturedDmlCounter.get() == 0 ? 1 : capturedDmlCounter.get());
+        return averageLagsFromTheSource.get().toMillis();
     }
 
     @Override
@@ -232,23 +279,42 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     }
 
     @Override
+    public int getErrorCounter() {
+        return errorCounter.get();
+    }
+
+    @Override
+    public int getWarningCounter() {
+        return warningCounter.get();
+    }
+
+    @Override
+    public int getScnFreezeCounter() {
+        return scnFreezeCounter.get();
+    }
+
+    @Override
     public void reset() {
         maxLagFromTheSource.set(Duration.ZERO);
         minLagFromTheSource.set(Duration.ZERO);
-        totalLagsFromTheSource.set(Duration.ZERO);
+        averageLagsFromTheSource.set(Duration.ZERO);
         activeTransactions.set(0);
         rolledBackTransactions.set(0);
         committedTransactions.set(0);
         capturedDmlCounter.set(0);
         committedDmlCounter.set(0);
-        totalLagsFromTheSource.set(Duration.ZERO);
         abandonedTransactionIds.set(new HashSet<>());
         rolledBackTransactionIds.set(new HashSet<>());
         lagFromTheSource.set(Duration.ZERO);
+        errorCounter.set(0);
+        warningCounter.set(0);
+        scnFreezeCounter.set(0);
         ufvDelete = 0L;
         ufvInsert = 0L;
         wiInsert = 0L;
         wiDelete = 0L;
+        rtdInsert = 0L;
+        rtdDelete = 0L;
     }
 
     @Override
@@ -264,8 +330,11 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
                 ", committedDmlCounter=" + committedDmlCounter.get() +
                 ", maxLagFromTheSource=" + maxLagFromTheSource.get() +
                 ", minLagFromTheSource=" + minLagFromTheSource.get() +
-                ", averageLagsFromTheSource=" + getAverageLagFromSource() +
+                ", averageLagsFromTheSource=" + averageLagsFromTheSource.get() +
                 ", abandonedTransactionIds=" + abandonedTransactionIds.get() +
+                ", errorCounter=" + errorCounter.get() +
+                ", warningCounter=" + warningCounter.get() +
+                ", scnFreezeCounter=" + scnFreezeCounter.get() +
                 '}';
     }
 }

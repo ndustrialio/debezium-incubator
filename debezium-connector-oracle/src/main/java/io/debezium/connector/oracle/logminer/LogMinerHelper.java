@@ -18,6 +18,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
@@ -36,6 +37,7 @@ public class LogMinerHelper {
 
     private final static String UNKNOWN = "unknown";
     private final static Logger LOGGER = LoggerFactory.getLogger(LogMinerHelper.class);
+    private enum DATATYPE {LONG, TIMESTAMP, STRING}
 
     /**
      * This builds data dictionary objects in redo log files.
@@ -71,16 +73,16 @@ public class LogMinerHelper {
         }
     }
 
-    public static void createAuditTable(Connection connection) throws SQLException {
-        String tableExists = getStringResult(connection, SqlUtils.AUDIT_TABLE_EXISTS);
+    static void createAuditTable(Connection connection) throws SQLException {
+        String tableExists = (String) getSingleResult(connection, SqlUtils.AUDIT_TABLE_EXISTS, DATATYPE.STRING);
         if (tableExists == null) {
             executeCallableStatement(connection, SqlUtils.CREATE_AUDIT_TABLE);
         }
 
-        String recordExists = getStringResult(connection, SqlUtils.AUDIT_TABLE_RECORD_EXISTS);
+        String recordExists = (String) getSingleResult(connection, SqlUtils.AUDIT_TABLE_RECORD_EXISTS, DATATYPE.STRING);
         if (recordExists == null) {
             executeCallableStatement(connection, SqlUtils.INSERT_AUDIT_TABLE);
-            executeCallableStatement(connection, "commit");
+            connection.commit();
         }
     }
 
@@ -131,17 +133,18 @@ public class LogMinerHelper {
 
 
     /**
-     * Calculate time difference between database and connector
+     * Calculate time difference between database and connector timers. It could be negative if DB time is ahead.
      * @param connection connection
      * @return difference in milliseconds
      */
-    static Long getTimeDifference(Connection connection) {
-        try {
-            Long dbCurrentMillis = getLongResult(connection, SqlUtils.CURRENT_MILLIS);
-            return Duration.between(Instant.now(), Instant.ofEpochMilli(dbCurrentMillis)).toMillis();
-        } catch (SQLException e) {
-            return 0L;
+    static long getTimeDifference(Connection connection) throws SQLException {
+        Timestamp dbCurrentMillis = (Timestamp) getSingleResult(connection, SqlUtils.CURRENT_TIMESTAMP, DATATYPE.TIMESTAMP);
+        if (dbCurrentMillis == null) {
+            return 0;
         }
+        Instant fromDb = dbCurrentMillis.toInstant();
+        Instant now  = Instant.now();
+        return Duration.between(fromDb, now).toMillis();
     }
 
     /**
@@ -245,21 +248,6 @@ public class LogMinerHelper {
     }
 
     /**
-     * After a switch, we should remove it from the analysis.
-     * NOTE. It does not physically remove the log file.
-     *
-     * @param logFileName file to delete from the analysis
-     * @param connection  container level database connection
-     * @throws SQLException if anything unexpected happens
-     */
-    private static void removeLogFileFromMining(String logFileName, Connection connection) throws SQLException {
-        String removeLogFileFromMining = SqlUtils.getRemoveLogFileFromMiningStatement(logFileName);
-        executeCallableStatement(connection, removeLogFileFromMining);
-        LOGGER.debug("{} was removed from mining session", removeLogFileFromMining);
-
-    }
-
-    /**
      * This method checks if supplemental logging was set on the database level. This is critical check, cannot work if not.
      * @param jdbcConnection oracle connection on logminer level
      * @param connection conn
@@ -356,6 +344,16 @@ public class LogMinerHelper {
         return Optional.empty();
     }
 
+    static void logWarn(TransactionalBufferMetrics metrics, String format, Object...args){
+        LOGGER.warn(format, args);
+        metrics.incrementWarningCounter();
+    }
+
+    static void logError(TransactionalBufferMetrics metrics, String format, Object...args){
+        LOGGER.error(format, args);
+        metrics.incrementErrorCounter();
+    }
+
     /**
      * get size of online REDO groups
      * @param connection connection
@@ -398,23 +396,20 @@ public class LogMinerHelper {
         }
     }
 
-    private static String getStringResult(Connection connection, String query) throws SQLException {
+    private static Object getSingleResult(Connection connection, String query, DATATYPE type) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(query);
              ResultSet rs = statement.executeQuery()) {
             if (rs.next()) {
-                return rs.getString(1);
+                switch (type){
+                    case LONG :
+                        return rs.getLong(1);
+                    case TIMESTAMP:
+                        return rs.getTimestamp(1);
+                    case STRING:
+                        return rs.getString(1);
+                }
             }
             return null;
-        }
-    }
-
-    private static Long getLongResult(Connection connection, String query) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(query);
-             ResultSet rs = statement.executeQuery()) {
-            if (rs.next()) {
-                return rs.getLong(1);
-            }
-            return System.currentTimeMillis();
         }
     }
 }

@@ -25,8 +25,7 @@ class SqlUtils {
 
     static final String BUILD_DICTIONARY = "BEGIN DBMS_LOGMNR_D.BUILD (options => DBMS_LOGMNR_D.STORE_IN_REDO_LOGS); END;";
     static final String CURRENT_SCN = "SELECT CURRENT_SCN FROM V$DATABASE";
-    static final String CURRENT_MILLIS = "select TO_CHAR(extract(day from(sys_extract_utc(systimestamp) - to_timestamp('1970-01-01', 'YYYY-MM-DD'))) * 86400000 " +
-            "            + to_number(to_char(sys_extract_utc(systimestamp), 'SSSSSFF3'))) from dual";
+    static final String CURRENT_TIMESTAMP = "select current_timestamp from dual";
     static final String END_LOGMNR = "BEGIN SYS.DBMS_LOGMNR.END_LOGMNR(); END;";
     static final String OLDEST_FIRST_CHANGE = "SELECT MIN(FIRST_CHANGE#) FROM V$LOG";
     static final String ALL_ONLINE_LOGS = "SELECT MIN(F.MEMBER) AS FILE_NAME, L.NEXT_CHANGE# AS NEXT_CHANGE, F.GROUP# " +
@@ -118,16 +117,6 @@ class SqlUtils {
                 buildTableInPredicate(whiteListTableNames) +
                 " AND SCN >= ? AND SCN < ? " +
                 " OR (OPERATION_CODE IN (7,34,36) AND USERNAME NOT IN ('SYS','SYSTEM','"+logMinerUser.toUpperCase()+"'))" + sorting; //todo username = schemaName?
-    }
-
-    /**
-     * After mining archived log files, we should remove them from the analysis.
-     * NOTE. It does not physically remove the log file.
-     * @param logFileName file ro remove
-     * @return statement
-     */
-    static String getRemoveLogFileFromMiningStatement(String logFileName) {
-        return "BEGIN SYS.DBMS_LOGMNR.REMOVE_LOGFILE('" + logFileName + "'); END;";
     }
 
     static String getAddLogFileStatement(String option, String fileName) {

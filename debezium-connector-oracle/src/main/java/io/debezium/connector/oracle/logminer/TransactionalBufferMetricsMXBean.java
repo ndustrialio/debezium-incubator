@@ -41,7 +41,7 @@ public interface TransactionalBufferMetricsMXBean {
     long getCapturedDmlThroughput();
 
     /**
-     * exposes tatal number of captured DMLs
+     * exposes total number of captured DMLs
      * @return captured DML count
      */
     long getCapturedDmlCount();
@@ -108,6 +108,22 @@ public interface TransactionalBufferMetricsMXBean {
      */
     void reset();
 
+    /**
+     * This is to get logged logError counter.
+     */
+    int getErrorCounter();
+
+    /**
+     * This is to get logged warning counter
+     */
+    int getWarningCounter();
+
+    /**
+     * Get counter of encountered observations when SCN does not change in the offset.
+     */
+    int getScnFreezeCounter();
+
+
     // todo delete after stowplan test
     Long getUfvDelete();
     void incrementUfvDelete();
@@ -118,4 +134,9 @@ public interface TransactionalBufferMetricsMXBean {
     void incrementWiDelete();
     Long getWiInsert();
     void incrementWiInsert();
+
+    Long getRTDDelete();
+    void incrementRTDDelete();
+    Long getRTDInsert();
+    void incrementRTDInsert();
 }

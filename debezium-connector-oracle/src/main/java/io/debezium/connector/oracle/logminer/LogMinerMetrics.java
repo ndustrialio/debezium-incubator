@@ -71,8 +71,8 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
         currentScn.set(scn);
     }
 
-    public void setCapturedDmlCount(int count){
-        capturedDmlCount.set(count);
+    public void incrementCapturedDmlCount() {
+        capturedDmlCount.incrementAndGet();
     }
 
     public void setCurrentLogFileName(Set<String> names){
