@@ -6,18 +6,14 @@
 package io.debezium.connector.oracle.logminer;
 
 import io.debezium.connector.common.CdcSourceTaskContext;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.concurrent.atomic.AtomicLong;
 
 import static org.fest.assertions.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -69,7 +65,7 @@ public class LogMinerMetricsTest {
         assertThat(metrics.getAverageLogMinerQueryDuration() == 150).isTrue();
         assertThat(metrics.getLogMinerQueryCount() == 2).isTrue();
 
-        metrics.setCurrentLogFileName(new HashSet<>(Arrays.asList("name","name1")));
+        metrics.setCurrentLogFileName(new HashSet<>(Arrays.asList("name", "name1")));
         assertThat(metrics.getCurrentRedoLogFileName()[0].equals("name")).isTrue();
         assertThat(metrics.getCurrentRedoLogFileName()[1].equals("name1")).isTrue();
 
