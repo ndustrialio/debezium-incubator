@@ -215,7 +215,7 @@ public final class TransactionalBuffer {
 
         Transaction transaction = transactions.get(transactionId);
         if (transaction != null) {
-            LOGGER.debug("Transaction rolled back, {}", debugMessage);
+            LOGGER.debug("Transaction rolled back, {} , Statements: {}", debugMessage, transaction.redoSqlMap.values().toArray());
 
             calculateLargestScn(); // in case if largest SCN was in this transaction
             transactions.remove(transactionId);

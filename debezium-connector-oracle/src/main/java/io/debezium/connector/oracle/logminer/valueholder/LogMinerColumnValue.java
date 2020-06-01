@@ -5,10 +5,6 @@
  */
 package io.debezium.connector.oracle.logminer.valueholder;
 
-/**
- * This interface mimics API of oracle.streams.ColumnValue interface
- * it does not cover LOB which should be handled in chunks
- */
 public interface LogMinerColumnValue {
 
     /**
@@ -16,11 +12,6 @@ public interface LogMinerColumnValue {
      * with exception of LOB types
      */
     Object getColumnData();
-
-    /**
-     * @return java.sql.Type constant
-     */
-    int getColumnDataType();
 
     /**
      * @return column name

@@ -13,12 +13,12 @@ package io.debezium.connector.oracle.logminer.valueholder;
  * The "processed" flag helps to filter the resulting collection of "new" and "old" values.
  *
  */
-public class ColumnValueHolder {
+public class LogMinerColumnValueWrapper {
 
     private boolean processed;
     private final LogMinerColumnValue columnValue;
 
-    public ColumnValueHolder(LogMinerColumnValue columnValue) {
+    public LogMinerColumnValueWrapper(LogMinerColumnValue columnValue) {
         this.columnValue = columnValue;
     }
 

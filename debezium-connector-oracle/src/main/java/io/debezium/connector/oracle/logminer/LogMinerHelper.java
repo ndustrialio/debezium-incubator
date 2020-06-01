@@ -104,7 +104,7 @@ public class LogMinerHelper {
 
         // it is critical to flush LogWriter buffer
         executeCallableStatement(connection, SqlUtils.UPDATE_AUDIT_TABLE + currentScn);
-        executeCallableStatement(connection, "commit");
+        connection.commit();
 
         // adjust sleeping time to optimize DB impact and catchup faster when behind
         boolean isNextScnCloseToDbCurrent = currentScn < (startScn + miningDiapason);
@@ -112,25 +112,6 @@ public class LogMinerHelper {
 
         return isNextScnCloseToDbCurrent ? currentScn : startScn + miningDiapason;
     }
-
-    /**
-     * This is to update MBean metrics
-     * @param connection connection
-     * @param metrics current metrics
-     */
-    static void updateLogMinerMetrics(Connection connection, LogMinerMetrics metrics) {
-        try {
-            // update metrics
-            Map<String, String> logStatuses = getRedoLogStatus(connection);
-            metrics.setRedoLogStatus(logStatuses);
-
-            int counter = getSwitchCount(connection);
-            metrics.setSwitchCount(counter);
-        } catch (SQLException e) {
-            LOGGER.error("Cannot update metrics");
-        }
-    }
-
 
     /**
      * Calculate time difference between database and connector timers. It could be negative if DB time is ahead.
@@ -189,7 +170,7 @@ public class LogMinerHelper {
         st.close();
         result.close();
 
-        metrics.setCurrentLogFileName(fileNames);
+        updateRedoLogMetrics(connection, metrics, fileNames);
         return fileNames;
     }
 
@@ -221,6 +202,26 @@ public class LogMinerHelper {
     }
 
     /**
+     * This is to update MBean metrics associated with REDO LOG groups
+     * @param connection connection
+     * @param fileNames name of current REDO LOG files
+     * @param metrics current metrics
+     */
+    private static void updateRedoLogMetrics(Connection connection, LogMinerMetrics metrics, Set<String> fileNames) {
+        try {
+            // update metrics
+            Map<String, String> logStatuses = getRedoLogStatus(connection);
+            metrics.setRedoLogStatus(logStatuses);
+
+            int counter = getSwitchCount(connection);
+            metrics.setSwitchCount(counter);
+            metrics.setCurrentLogFileName(fileNames);
+        } catch (SQLException e) {
+            LOGGER.error("Cannot update metrics");
+        }
+    }
+
+    /**
      * This fetches online redo log statuses
      * @param connection privileged connection
      * @return REDO LOG statuses Map, where key is the REDO name and value is the status
@@ -249,26 +250,25 @@ public class LogMinerHelper {
 
     /**
      * This method checks if supplemental logging was set on the database level. This is critical check, cannot work if not.
-     * @param jdbcConnection oracle connection on logminer level
-     * @param connection conn
+     * @param connection oracle connection on logminer level
      * @param pdbName pdb name
      * @throws SQLException if anything unexpected happens
      */
-    static void checkSupplementalLogging(OracleConnection jdbcConnection, Connection connection, String pdbName) throws SQLException {
+    static void checkSupplementalLogging(OracleConnection connection, String pdbName) throws SQLException {
         try {
             if (pdbName != null) {
-                jdbcConnection.setSessionToPdb(pdbName);
+                connection.setSessionToPdb(pdbName);
             }
 
             final String key = "KEY";
             String validateGlobalLogging = "SELECT '" + key + "', " + " SUPPLEMENTAL_LOG_DATA_ALL from V$DATABASE";
-            Map<String, String> globalLogging = getMap(connection, validateGlobalLogging, UNKNOWN);
+            Map<String, String> globalLogging = getMap(connection.connection(false), validateGlobalLogging, UNKNOWN);
             if ("no".equalsIgnoreCase(globalLogging.get(key))) {
                 throw new RuntimeException("Supplemental logging was not set. Use command: ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS");
             }
         } finally {
             if (pdbName != null) {
-                jdbcConnection.resetSessionToCdb();
+                connection.resetSessionToCdb();
             }
         }
     }

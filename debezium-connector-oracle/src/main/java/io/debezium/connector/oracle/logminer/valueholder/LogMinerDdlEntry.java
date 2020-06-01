@@ -6,10 +6,10 @@
 package io.debezium.connector.oracle.logminer.valueholder;
 
 /**
- * This class mimics some API of oracle.streams.DDLLCR interface
+ * This class is a placeholder of DDL data
  *
  */
-public interface LogMinerDdlLcr extends LogMinerLcr {
+public interface LogMinerDdlEntry {
     /**
      * @return text of the DDL statement
      */

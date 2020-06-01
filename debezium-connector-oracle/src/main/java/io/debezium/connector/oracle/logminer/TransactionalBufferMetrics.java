@@ -42,71 +42,6 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     private AtomicInteger warningCounter = new AtomicInteger();
     private AtomicInteger scnFreezeCounter = new AtomicInteger();
 
-
-
-    // temp todo delete after stowplan testing
-    private Long ufvDelete = 0L;
-    private Long ufvInsert = 0L;
-    private Long wiDelete = 0L;
-    private Long wiInsert = 0L;
-    private Long rtdDelete = 0L;
-    private Long rtdInsert = 0L;
-
-    public Long getUfvDelete() {
-        return ufvDelete;
-    }
-
-    public void incrementUfvDelete() {
-        this.ufvDelete++;
-    }
-
-    public Long getUfvInsert() {
-        return ufvInsert;
-    }
-
-    public void incrementUfvInsert() {
-        this.ufvInsert++;
-    }
-    @Override
-    public Long getWiDelete() {
-        return wiDelete;
-    }
-
-    @Override
-    public void incrementWiDelete() {
-        this.wiDelete++;
-    }
-
-    @Override
-    public Long getWiInsert() {
-        return wiInsert;
-    }
-
-    @Override
-    public void incrementWiInsert() {
-        wiInsert++;
-    }
-
-    @Override
-    public Long getRTDDelete() {
-        return rtdDelete;
-    }
-
-    @Override
-    public void incrementRTDDelete() {
-        rtdDelete++;
-    }
-
-    @Override
-    public Long getRTDInsert() {
-        return rtdInsert;
-    }
-
-    @Override
-    public void incrementRTDInsert() {
-        rtdInsert++;
-    }
-
     TransactionalBufferMetrics(CdcSourceTaskContext taskContext) {
         super(taskContext, "log-miner-transactional-buffer");
         startTime = Instant.now();
@@ -235,12 +170,14 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
 
     @Override
     public long getCommitThroughput() {
-        return committedTransactions.get() * MILLIS_PER_SECOND / Duration.between(startTime, Instant.now()).toMillis();
+        long timeSpent = Duration.between(startTime, Instant.now()).isZero() ? 1 : Duration.between(startTime, Instant.now()).toMillis();
+        return committedTransactions.get() * MILLIS_PER_SECOND / timeSpent;
     }
 
     @Override
     public long getCapturedDmlThroughput() {
-        return committedDmlCounter.get() * MILLIS_PER_SECOND / Duration.between(startTime, Instant.now()).toMillis();
+        long timeSpent = Duration.between(startTime, Instant.now()).isZero() ? 1 : Duration.between(startTime, Instant.now()).toMillis();
+        return committedDmlCounter.get() * MILLIS_PER_SECOND / timeSpent;
     }
 
     @Override
@@ -309,12 +246,6 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         errorCounter.set(0);
         warningCounter.set(0);
         scnFreezeCounter.set(0);
-        ufvDelete = 0L;
-        ufvInsert = 0L;
-        wiInsert = 0L;
-        wiDelete = 0L;
-        rtdInsert = 0L;
-        rtdDelete = 0L;
     }
 
     @Override

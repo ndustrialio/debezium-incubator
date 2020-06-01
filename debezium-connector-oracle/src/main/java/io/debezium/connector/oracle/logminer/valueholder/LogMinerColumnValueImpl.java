@@ -10,7 +10,7 @@ import io.debezium.connector.oracle.antlr.listener.ParserUtils;
 import java.util.Objects;
 
 /**
- * This class mimics the API of oracle.streams.DefaultColumnValue implementation
+ * This class stores parsed column info
  *
  */
 public class LogMinerColumnValueImpl implements LogMinerColumnValue {
@@ -22,11 +22,6 @@ public class LogMinerColumnValueImpl implements LogMinerColumnValue {
     public LogMinerColumnValueImpl(String columnName, int columnType) {
         this.columnName = columnName;
         this.columnType = columnType;
-    }
-
-    @Override
-    public int getColumnDataType() {
-        return columnType;
     }
 
     @Override
@@ -46,15 +41,6 @@ public class LogMinerColumnValueImpl implements LogMinerColumnValue {
         } else {
             this.columnData = columnData;
         }
-    }
-
-    @Override
-    public String toString() {
-        return "LogMinerColumnValueImpl{" +
-                "columnName='" + columnName + '\'' +
-                ", columnData=" + columnData +
-                ", columnType=" + columnType +
-                '}';
     }
 
     @Override

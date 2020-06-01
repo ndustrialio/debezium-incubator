@@ -20,8 +20,8 @@ import java.util.stream.Collectors;
  */
 class SqlUtils {
 
-    static final String LOGMNR_CONTENTS_VIEW = "V$LOGMNR_CONTENTS";
-    static final String LOGMNR_AUDIT_TABLE = "LOG_MINING_AUDIT";
+    private static final String LOGMNR_CONTENTS_VIEW = "V$LOGMNR_CONTENTS";
+    private static final String LOGMNR_AUDIT_TABLE = "LOG_MINING_AUDIT";
 
     static final String BUILD_DICTIONARY = "BEGIN DBMS_LOGMNR_D.BUILD (options => DBMS_LOGMNR_D.STORE_IN_REDO_LOGS); END;";
     static final String CURRENT_SCN = "SELECT CURRENT_SCN FROM V$DATABASE";
@@ -78,13 +78,12 @@ class SqlUtils {
                 "endScn => '" + endScn + "', " +
                 "OPTIONS => " + miningStrategy +
                 " + DBMS_LOGMNR.NO_ROWID_IN_STMT);" +
-//                ");" +
                 "END;";
     }
 
     /**
      * This is the query from the log miner view to get changes. Columns of the view we using are:
-     *
+     * NOTE. Currently we do not capture changes from other schemas
      * SCN - The SCN at which a change was made
      * COMMIT_SCN - The SCN at which a change was committed
      * USERNAME - Name of the user who executed the transaction
@@ -96,23 +95,14 @@ class SqlUtils {
      * @param schemaName user name
      * @param logMinerUser log mining session user name
      * @param schema schema
-     * @param miningViewName table/view to get mining info from. TODO The table option is used to prototype CTAS approach.
-     *                       Currently it is not properly tested, so we hide this configuration option for now
      * @return the query
      */
-
-    static String queryLogMinerContents(String schemaName, String logMinerUser, OracleDatabaseSchema schema, String miningViewName)  {
+    static String queryLogMinerContents(String schemaName, String logMinerUser, OracleDatabaseSchema schema)  {
         List<String> whiteListTableNames = schema.tableIds().stream().map(TableId::table).collect(Collectors.toList());
 
         String sorting = "";
-        if (miningViewName.equalsIgnoreCase("logmnr_contents")){
-            sorting = " order by scn, rs_id, csf desc";
-        }
         return "SELECT SCN, SQL_REDO, OPERATION_CODE, TIMESTAMP, XID, CSF, TABLE_NAME, SEG_OWNER  " +
-                " FROM " + miningViewName +
-                " WHERE " +
-                // currently we do not capture changes from other schemas
-                " OPERATION_CODE in (1,2,3,5) " +// 5 - DDL
+                " FROM " + LOGMNR_CONTENTS_VIEW + " WHERE  OPERATION_CODE in (1,2,3,5) " +// 5 - DDL
                 " AND SEG_OWNER = '"+ schemaName.toUpperCase() +"' " +
                 buildTableInPredicate(whiteListTableNames) +
                 " AND SCN >= ? AND SCN < ? " +
@@ -120,16 +110,12 @@ class SqlUtils {
     }
 
     static String getAddLogFileStatement(String option, String fileName) {
-        return "BEGIN sys." +
-                "dbms_logmnr.add_logfile(" +
-                "LOGFILENAME => '" + fileName + "', " +
-                "OPTIONS => " + option + ");" +
-                "END;";
+        return "BEGIN sys.dbms_logmnr.add_logfile(LOGFILENAME => '" + fileName + "', OPTIONS => " + option + ");END;";
     }
 
     /**
      * This method builds table_name IN predicate, filtering out non whitelisted tables from Log Mining.
-     * This method limits joining over 1000 tables, Oracle will throw exception in such predicate.
+     * It limits joining condition over 1000 tables, Oracle will throw exception in such predicate.
      * @param tables white listed table names
      * @return IN predicate or empty string if number of whitelisted tables exceeds 1000
      */

@@ -8,13 +8,10 @@ package io.debezium.connector.oracle.logminer.valueholder;
 import io.debezium.data.Envelope;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.util.List;
 
-/**
- * This interface mimics the API of oracle.streams.RowLCR interface
- *
- */
-public interface LogMinerRowLcr extends LogMinerLcr {
+public interface LogMinerDmlEntry {
     /**
      * This getter
      * @return old(current) values of the database record.
@@ -44,8 +41,53 @@ public interface LogMinerRowLcr extends LogMinerLcr {
     BigDecimal getScn();
 
     /**
+     * @return transaction ID
+     */
+    String getTransactionId();
+
+    /**
+     * @return schema name
+     */
+    String getObjectOwner();
+
+    /**
+     * @return table name
+     */
+    String getObjectName();
+
+    /**
+     * @return database change time of this logical record
+     */
+    Timestamp getSourceTime();
+
+    /**
      * sets scn obtained from a Log Miner entry
      * @param scn it's value
      */
     void setScn(BigDecimal scn);
+
+    /**
+     * Sets table name
+     * @param name table name
+     */
+    void setObjectName(String name);
+
+    /**
+     * Sets schema owner
+     * @param name schema owner
+     */
+    void setObjectOwner(String name);
+
+    /**
+     * Sets the time of the database change
+     * @param changeTime the time of the change
+     */
+    void setSourceTime(Timestamp changeTime);
+
+    /**
+     * @param id unique transaction ID
+     */
+    void setTransactionId(String id);
+
+
 }

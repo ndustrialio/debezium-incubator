@@ -8,7 +8,7 @@ package io.debezium.connector.oracle.logminer;
 import io.debezium.connector.oracle.OracleDatabaseSchema;
 import io.debezium.connector.oracle.OracleOffsetContext;
 import io.debezium.connector.oracle.jsqlparser.SimpleDmlParser;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerDmlEntry;
 import io.debezium.data.Envelope;
 import io.debezium.pipeline.EventDispatcher;
 import io.debezium.pipeline.source.spi.ChangeEventSource;
@@ -146,59 +146,32 @@ class LogMinerQueryResultProcessor {
                 dmlCounter++;
                 metrics.incrementCapturedDmlCount();
                 iterationStart = Instant.now();
-                LogMinerRowLcr rowLcr = dmlParser.parse(redo_sql, schema.getTables(), txId);
+                LogMinerDmlEntry dmlEntry = dmlParser.parse(redo_sql, schema.getTables(), txId);
                 cumulativeParseTime = cumulativeParseTime.plus(Duration.between(iterationStart, Instant.now()));
                 iterationStart = Instant.now();
 
-                if (rowLcr == null || redo_sql == null) {
+                if (dmlEntry == null || redo_sql == null) {
                     LOGGER.trace("Following statement was not parsed: {}, details: {}", redo_sql, logMessage);
                     continue;
                 }
 
                 // this will happen for instance on a blacklisted column change, we will omit this update
-                if (rowLcr.getCommandType().equals(Envelope.Operation.UPDATE)
-                        && rowLcr.getOldValues().size() == rowLcr.getNewValues().size()
-                        && rowLcr.getNewValues().containsAll(rowLcr.getOldValues())) {
+                if (dmlEntry.getCommandType().equals(Envelope.Operation.UPDATE)
+                        && dmlEntry.getOldValues().size() == dmlEntry.getNewValues().size()
+                        && dmlEntry.getNewValues().containsAll(dmlEntry.getOldValues())) {
                     LOGGER.trace("Following DML was skipped, " +
                             "most likely because of ignored blacklisted column change: {}, details: {}", redo_sql, logMessage);
                     continue;
                 }
 
-                rowLcr.setObjectOwner(segOwner);
-                rowLcr.setSourceTime(changeTime);
-                rowLcr.setTransactionId(txId);
-                rowLcr.setObjectName(tableName);
-                rowLcr.setScn(scn);
+                dmlEntry.setObjectOwner(segOwner);
+                dmlEntry.setSourceTime(changeTime);
+                dmlEntry.setTransactionId(txId);
+                dmlEntry.setObjectName(tableName);
+                dmlEntry.setScn(scn);
 
                 try {
                     TableId tableId = RowMapper.getTableId(catalogName, resultSet);
-
-                    // todo delete after stowplan confirmation
-                    if ("inv_unit_fcy_visit".equalsIgnoreCase(tableName)) {
-                        if (operationCode == 1) {
-                            transactionalBufferMetrics.incrementUfvInsert();
-                        }
-                        if (operationCode == 2) {
-                            transactionalBufferMetrics.incrementUfvDelete();
-                        }
-                    }
-                    if ("inv_wi".equalsIgnoreCase(tableName)) {
-                        if (operationCode == 1) {
-                            transactionalBufferMetrics.incrementWiInsert();
-                        }
-                        if (operationCode == 2) {
-                            transactionalBufferMetrics.incrementWiDelete();
-                        }
-                    }
-                    if ("road_truck_visit_details".equalsIgnoreCase(tableName)) {
-                        if (operationCode == 1) {
-                            transactionalBufferMetrics.incrementRTDInsert();
-                        }
-                        if (operationCode == 2) {
-                            transactionalBufferMetrics.incrementRTDDelete();
-                        }
-                    }
-
                     transactionalBuffer.registerCommitCallback(txId, scn, changeTime.toInstant(), redo_sql, (timestamp, smallestScn, commitScn, counter) -> {
                         // update SCN in offset context only if processed SCN less than SCN among other transactions
                         if (smallestScn == null || scn.compareTo(smallestScn) < 0) {
@@ -212,16 +185,16 @@ class LogMinerQueryResultProcessor {
                             offsetContext.setCommitScn(commitScn.longValue());
                         }
                         Table table = schema.tableFor(tableId);
-                        LOGGER.trace("Processing DML event {} scn {}", rowLcr.toString(), scn);
+                        LOGGER.trace("Processing DML event {} scn {}", dmlEntry.toString(), scn);
 
                         dispatcher.dispatchDataChangeEvent(tableId,
-                                new LogMinerChangeRecordEmitter(offsetContext, rowLcr, table, clock)
+                                new LogMinerChangeRecordEmitter(offsetContext, dmlEntry, table, clock)
                         );
                     });
                     cumulativeOtherTime = cumulativeOtherTime.plus(Duration.between(iterationStart, Instant.now()));
 
                 } catch (Exception e) {
-                    LogMinerHelper.logError(transactionalBufferMetrics, "Following rowLcr: {} cannot be dispatched due to the : {}", rowLcr, e);
+                    LogMinerHelper.logError(transactionalBufferMetrics, "Following dmlEntry: {} cannot be dispatched due to the : {}", dmlEntry, e);
                 }
             }
         }

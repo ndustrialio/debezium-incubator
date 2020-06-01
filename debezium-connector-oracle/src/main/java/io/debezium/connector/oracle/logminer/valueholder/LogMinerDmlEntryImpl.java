@@ -13,10 +13,10 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * This class holds LCR data (similar the API of oracle.streams.DefaultRowLCR class). LCR stands for logical change record
+ * This class holds one parsed DML Log Miner record details
  *
  */
-public class LogMinerRowLcrImpl implements LogMinerRowLcr {
+public class LogMinerDmlEntryImpl implements LogMinerDmlEntry {
 
     private Envelope.Operation commandType;
     private List<LogMinerColumnValue> newLmColumnValues;
@@ -27,7 +27,7 @@ public class LogMinerRowLcrImpl implements LogMinerRowLcr {
     private String transactionId;
     private BigDecimal scn;
 
-    public LogMinerRowLcrImpl(Envelope.Operation commandType, List<LogMinerColumnValue> newLmColumnValues, List<LogMinerColumnValue> oldLmColumnValues) {
+    public LogMinerDmlEntryImpl(Envelope.Operation commandType, List<LogMinerColumnValue> newLmColumnValues, List<LogMinerColumnValue> oldLmColumnValues) {
         this.commandType = commandType;
         this.newLmColumnValues = newLmColumnValues;
         this.oldLmColumnValues = oldLmColumnValues;
@@ -64,6 +64,11 @@ public class LogMinerRowLcrImpl implements LogMinerRowLcr {
     }
 
     @Override
+    public Timestamp getSourceTime() {
+        return sourceTime;
+    }
+
+    @Override
     public void setObjectName(String name) {
         this.objectName = name;
     }
@@ -76,11 +81,6 @@ public class LogMinerRowLcrImpl implements LogMinerRowLcr {
     @Override
     public void setSourceTime(Timestamp changeTime) {
         this.sourceTime = changeTime;
-    }
-
-    @Override
-    public Timestamp getSourceTime() {
-        return sourceTime;
     }
 
     @Override
@@ -106,7 +106,7 @@ public class LogMinerRowLcrImpl implements LogMinerRowLcr {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        LogMinerRowLcrImpl that = (LogMinerRowLcrImpl) o;
+        LogMinerDmlEntryImpl that = (LogMinerDmlEntryImpl) o;
         return commandType == that.commandType &&
                 Objects.equals(newLmColumnValues, that.newLmColumnValues) &&
                 Objects.equals(oldLmColumnValues, that.oldLmColumnValues);

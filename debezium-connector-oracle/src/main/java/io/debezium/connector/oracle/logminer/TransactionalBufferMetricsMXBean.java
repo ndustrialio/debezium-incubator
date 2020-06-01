@@ -122,21 +122,4 @@ public interface TransactionalBufferMetricsMXBean {
      * Get counter of encountered observations when SCN does not change in the offset.
      */
     int getScnFreezeCounter();
-
-
-    // todo delete after stowplan test
-    Long getUfvDelete();
-    void incrementUfvDelete();
-    Long getUfvInsert();
-    void incrementUfvInsert();
-
-    Long getWiDelete();
-    void incrementWiDelete();
-    Long getWiInsert();
-    void incrementWiInsert();
-
-    Long getRTDDelete();
-    void incrementRTDDelete();
-    Long getRTDInsert();
-    void incrementRTDInsert();
 }
