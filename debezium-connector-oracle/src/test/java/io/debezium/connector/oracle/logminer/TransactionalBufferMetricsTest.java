@@ -92,7 +92,7 @@ public class TransactionalBufferMetricsTest {
     }
 
     @Test
-    public void testOthers() {
+    public void testOtherMetrics() {
         metrics.incrementScnFreezeCounter();
         assertThat(metrics.getScnFreezeCounter() == 1).isTrue();
 
@@ -108,9 +108,9 @@ public class TransactionalBufferMetricsTest {
             metrics.incrementCommittedTransactions();
         }
         assertThat(metrics.getCapturedDmlCount() == 1000).isTrue();
-        assertThat(metrics.getCapturedDmlThroughput() > 10_000 && metrics.getCapturedDmlThroughput() < 1_000_000).isTrue();
+        assertThat(metrics.getCapturedDmlThroughput() > 10_000).isTrue();
         assertThat(metrics.getNumberOfCommittedTransactions() == 1000).isTrue();
-        assertThat(metrics.getCommitThroughput() >= 1_000 && metrics.getCommitThroughput() <= 200_000).isTrue();
+        assertThat(metrics.getCommitThroughput() >= 1_000).isTrue();
 
         metrics.incrementRolledBackTransactions();
         assertThat(metrics.getNumberOfRolledBackTransactions() == 1).isTrue();

@@ -7,7 +7,7 @@ package io.debezium.connector.oracle.logminer;
 
 import io.debezium.connector.oracle.BaseChangeRecordEmitter;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerDmlEntry;
 import io.debezium.data.Envelope.Operation;
 import io.debezium.pipeline.spi.OffsetContext;
 import io.debezium.relational.Table;
@@ -17,35 +17,35 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Emits change record based on a single {@link LogMinerRowLcr} event.
+ * Emits change record based on a single {@link LogMinerDmlEntry} event.
  */
 public class LogMinerChangeRecordEmitter extends BaseChangeRecordEmitter<LogMinerColumnValue> {
 
-    private LogMinerRowLcr lcr;
+    private LogMinerDmlEntry dmlEntry;
     protected final Table table;
 
 
-    public LogMinerChangeRecordEmitter(OffsetContext offset, LogMinerRowLcr lcr, Table table, Clock clock) {
+    public LogMinerChangeRecordEmitter(OffsetContext offset, LogMinerDmlEntry dmlEntry, Table table, Clock clock) {
         super(offset, table, clock);
-        this.lcr = lcr;
+        this.dmlEntry = dmlEntry;
         this.table = table;
     }
 
     @Override
     protected Operation getOperation() {
-        return lcr.getCommandType();
+        return dmlEntry.getCommandType();
     }
 
     @Override
     protected Object[] getOldColumnValues() {
-        List<LogMinerColumnValue> valueList =  lcr.getOldValues();
+        List<LogMinerColumnValue> valueList =  dmlEntry.getOldValues();
         LogMinerColumnValue[] result = Arrays.copyOf(valueList.toArray(), valueList.size(), LogMinerColumnValue[].class );
         return getColumnValues(result);
     }
 
     @Override
     protected Object[] getNewColumnValues() {
-        List<LogMinerColumnValue> valueList =  lcr.getNewValues();
+        List<LogMinerColumnValue> valueList =  dmlEntry.getNewValues();
         LogMinerColumnValue[] result = Arrays.copyOf(valueList.toArray(), valueList.size(), LogMinerColumnValue[].class );
         return getColumnValues(result);
     }

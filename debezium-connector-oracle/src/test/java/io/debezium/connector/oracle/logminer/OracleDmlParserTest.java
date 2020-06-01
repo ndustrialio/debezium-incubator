@@ -3,14 +3,13 @@
  *
  * Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
  */
-package io.debezium.connector.oracle;
+package io.debezium.connector.oracle.logminer;
 
 import io.debezium.connector.oracle.antlr.OracleDdlParser;
 import io.debezium.connector.oracle.antlr.OracleDmlParser;
 import io.debezium.connector.oracle.jsqlparser.SimpleDmlParser;
-import io.debezium.connector.oracle.logminer.OracleChangeRecordValueConverter;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerDmlEntry;
 import io.debezium.data.Envelope;
 import io.debezium.relational.Tables;
 import io.debezium.util.IoUtil;
@@ -74,7 +73,7 @@ public class OracleDmlParserTest {
                 "and a.COL8 = TO_TIMESTAMP('2019-05-14 02:28:32.') and a.col11 is null;";
 
         antlrDmlParser.parse(dml, tables);
-        LogMinerRowLcr record = antlrDmlParser.getDmlChange();
+        LogMinerDmlEntry record = antlrDmlParser.getDmlEntry();
         verifyUpdate(record, false, true, 9);
 
         record = sqlDmlParser.parse(dml, tables, "1");
@@ -89,7 +88,7 @@ public class OracleDmlParserTest {
         String dml = "insert into \"" + FULL_TABLE_NAME + "\" a (a.\"ID\",a.\"COL1\",a.\"COL2\",a.\"COL3\",a.\"COL4\",a.\"COL5\",a.\"COL6\",a.\"COL8\"," +
                 "a.\"COL9\",a.\"COL10\") values ('5','4','tExt','text',NULL,NULL,NULL,NULL,EMPTY_BLOB(),EMPTY_CLOB());";
         antlrDmlParser.parse(dml, tables);
-        LogMinerRowLcr record = antlrDmlParser.getDmlChange();
+        LogMinerDmlEntry record = antlrDmlParser.getDmlEntry();
         verifyInsert(record);
 
         record = sqlDmlParser.parse(dml, tables, "1");
@@ -106,7 +105,7 @@ public class OracleDmlParserTest {
                 "\" a where a.\"id\" = 6 and a.\"col1\" = 2 and a.\"col2\" = 'text' and a.col3 = 'tExt' and a.col4 is null and a.col5 is null " +
                 " and a.col6 is null and a.col8 is null and a.col9 is null and a.col10 is null and a.col11 is null and a.col12 is null";
         antlrDmlParser.parse(dml, tables);
-        LogMinerRowLcr record = antlrDmlParser.getDmlChange();
+        LogMinerDmlEntry record = antlrDmlParser.getDmlEntry();
         verifyDelete(record, true);
 
         record = sqlDmlParser.parse(dml, tables, "1");
@@ -122,7 +121,7 @@ public class OracleDmlParserTest {
                 "a.col8 = TO_TIMESTAMP('2019-05-14 02:28:32.302000'), a.col9=null, a.col10 = " + CLOB_DATA + ", a.col11 = null, a.col12 = '1'";
 
         antlrDmlParser.parse(dml, tables);
-        LogMinerRowLcr record = antlrDmlParser.getDmlChange();
+        LogMinerDmlEntry record = antlrDmlParser.getDmlEntry();
         verifyUpdate(record, false, false, 9);
 
         record = sqlDmlParser.parse(dml, tables, "1");
@@ -130,7 +129,7 @@ public class OracleDmlParserTest {
 
         dml = "delete from \"" + FULL_TABLE_NAME + "\" a ";
         antlrDmlParser.parse(dml, tables);
-        record = antlrDmlParser.getDmlChange();
+        record = antlrDmlParser.getDmlEntry();
         verifyDelete(record, false);
 
         record = sqlDmlParser.parse(dml, tables, "1");
@@ -146,7 +145,7 @@ public class OracleDmlParserTest {
         String dml = "insert into \"" + FULL_TABLE_NAME + "\"(\"ID\",\"COL1\",\"COL2\",\"COL3\",\"COL4\",\"COL5\",\"COL6\",\"COL8\"," +
                 "\"COL9\",\"COL10\") values ('5','4','tExt','text',NULL,NULL,NULL,NULL,EMPTY_BLOB(),EMPTY_CLOB());";
         antlrDmlParser.parse(dml, tables);
-        LogMinerRowLcr record = antlrDmlParser.getDmlChange();
+        LogMinerDmlEntry record = antlrDmlParser.getDmlEntry();
         verifyInsert(record);
 
         record = sqlDmlParser.parse(dml, tables, "1");
@@ -156,7 +155,7 @@ public class OracleDmlParserTest {
                 "\" where id = 6 and col1 = 2 and col2 = 'text' and col3 = 'tExt' and col4 is null and col5 is null " +
                 " and col6 is null and col8 is null and col9 is null and col10 is null and col11 is null and col12 is null";
         antlrDmlParser.parse(dml, tables);
-        record = antlrDmlParser.getDmlChange();
+        record = antlrDmlParser.getDmlEntry();
         verifyDelete(record, true);
 
         record = sqlDmlParser.parse(dml, tables, "");
@@ -177,7 +176,7 @@ public class OracleDmlParserTest {
                 "and COL8 = TO_TIMESTAMP('2019-05-14 02:28:32') and col11 = " + SPATIAL_DATA + ";";
 
         antlrDmlParser.parse(dml, tables);
-        LogMinerRowLcr record = antlrDmlParser.getDmlChange();
+        LogMinerDmlEntry record = antlrDmlParser.getDmlEntry();
         //verifyUpdate(record, true, true);
 
         record = sqlDmlParser.parse(dml, tables, "");
@@ -203,7 +202,7 @@ public class OracleDmlParserTest {
                 "and COL3 = Unsupported Type and COL4 IS NULL and \"COL5\" IS NULL and COL6 IS NULL and COL7 IS NULL and COL9 IS NULL and COL10 IS NULL and COL12 IS NULL " +
                 "and COL8 = TO_TIMESTAMP('2019-05-14 02:28:32') and col11 = " + SPATIAL_DATA + ";";
 
-        LogMinerRowLcr record = sqlDmlParser.parse(dml, tables, "");
+        LogMinerDmlEntry record = sqlDmlParser.parse(dml, tables, "");
         boolean pass = record.getCommandType().equals(Envelope.Operation.UPDATE)
                 && record.getOldValues().size() == record.getNewValues().size()
                 && record.getNewValues().containsAll(record.getOldValues());
@@ -220,9 +219,9 @@ public class OracleDmlParserTest {
         String dml = "insert into \"" + FULL_TABLE_NAME + "\"(\"ID\",\"COL1\",\"COL2\",\"COL3\",\"COL4\",\"COL5\",\"COL6\",\"COL8\"," +
                 "\"COL9\",\"COL10\") values ('5','4','\\','\\test',NULL,NULL,NULL,NULL,EMPTY_BLOB(),EMPTY_CLOB());";
         antlrDmlParser.parse(dml, tables);
-        assertThat(antlrDmlParser.getDmlChange()).isNotNull();
+        assertThat(antlrDmlParser.getDmlEntry()).isNotNull();
 
-        LogMinerRowLcr result = sqlDmlParser.parse(dml, tables, "1");
+        LogMinerDmlEntry result = sqlDmlParser.parse(dml, tables, "1");
         assertThat(result).isNotNull();
         LogMinerColumnValue value = result.getNewValues().get(2);
         assertThat(value.getColumnData().toString()).contains("\\");
@@ -231,7 +230,7 @@ public class OracleDmlParserTest {
                 "\" where id = 6 and col1 = 2 and col2 = 'te\\xt' and col3 = 'tExt\\' and col4 is null and col5 is null " +
                 " and col6 is null and col8 is null and col9 is null and col10 is null and col11 is null and col12 is null";
         antlrDmlParser.parse(dml, tables);
-        assertThat(antlrDmlParser.getDmlChange()).isNotNull();
+        assertThat(antlrDmlParser.getDmlEntry()).isNotNull();
 
         result = sqlDmlParser.parse(dml, tables, "");
         assertThat(result).isNotNull();
@@ -239,7 +238,31 @@ public class OracleDmlParserTest {
         assertThat(value.getColumnData().toString()).contains("\\");
     }
 
-    private void verifyUpdate(LogMinerRowLcr record, boolean checkGeometry, boolean checkOldValues, int oldValuesNumber) {
+    @Test
+    public void shouldParseStrangeDml() throws Exception {
+        String createStatement = IoUtil.read(IoUtil.getResourceAsStream("ddl/create_table.sql", null, getClass(), null, null));
+        ddlParser.parse(createStatement, tables);
+        String dml = null;
+        LogMinerDmlEntry result = sqlDmlParser.parse(dml, tables, "");
+        assertThat(result).isNull();
+        dml = "select * from test;null;";
+        result = sqlDmlParser.parse(dml, tables, "");
+        assertThat(result).isNull();
+        dml = "full dummy mess";
+        result = sqlDmlParser.parse(dml, tables, "");
+        assertThat(result).isNull();
+        dml = "delete from non_exiting_table "+
+                "\" where id = 6 and col1 = 2 and col2 = 'te\\xt' and col3 = 'tExt\\' and col4 is null and col5 is null " +
+                " and col6 is null and col8 is null and col9 is null and col10 is null and col11 is null and col12 is null";
+        try {
+            result = sqlDmlParser.parse(dml, tables, "");
+        } catch (Exception e) {
+            assertThat(result).isNull();
+        }
+
+    }
+
+    private void verifyUpdate(LogMinerDmlEntry record, boolean checkGeometry, boolean checkOldValues, int oldValuesNumber) {
         // validate
         assertThat(record.getCommandType()).isEqualTo(Envelope.Operation.UPDATE);
         List<LogMinerColumnValue> newValues = record.getNewValues();
@@ -338,7 +361,7 @@ public class OracleDmlParserTest {
         }
     }
 
-    private void verifyInsert(LogMinerRowLcr record) {
+    private void verifyInsert(LogMinerDmlEntry record) {
         List<LogMinerColumnValue> oldValues = record.getOldValues();
         assertThat(oldValues.size()).isEqualTo(0);
 
@@ -362,7 +385,7 @@ public class OracleDmlParserTest {
 
 
     }
-    private void verifyDelete(LogMinerRowLcr record, boolean checkOldValues) {
+    private void verifyDelete(LogMinerDmlEntry record, boolean checkOldValues) {
         assertThat(record.getCommandType()).isEqualTo(Envelope.Operation.DELETE);
         List<LogMinerColumnValue> newValues = record.getNewValues();
         assertThat(newValues.size()).isEqualTo(0);

@@ -6,9 +6,9 @@
 package io.debezium.connector.oracle.antlr.listener;
 
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
-import io.debezium.connector.oracle.logminer.valueholder.ColumnValueHolder;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcrImpl;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValueWrapper;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerDmlEntry;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerDmlEntryImpl;
 import io.debezium.connector.oracle.antlr.OracleDmlParser;
 import io.debezium.data.Envelope;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
@@ -58,9 +58,9 @@ public class DeleteParserListener extends BaseDmlStringParserListener {
     @Override
     public void exitDelete_statement(PlSqlParser.Delete_statementContext ctx) {
         List<LogMinerColumnValue> actualOldValues = oldColumnValues.values()
-                .stream().map(ColumnValueHolder::getColumnValue).collect(Collectors.toList());
-        LogMinerRowLcr newRecord = new LogMinerRowLcrImpl(Envelope.Operation.DELETE, Collections.emptyList(), actualOldValues);
-        parser.setRowLCR(newRecord);
+                .stream().map(LogMinerColumnValueWrapper::getColumnValue).collect(Collectors.toList());
+        LogMinerDmlEntry newRecord = new LogMinerDmlEntryImpl(Envelope.Operation.DELETE, Collections.emptyList(), actualOldValues);
+        parser.setDmlEntry(newRecord);
         super.exitDelete_statement(ctx);
     }
 }

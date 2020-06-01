@@ -5,7 +5,7 @@
  */
 package io.debezium.connector.oracle.antlr.listener;
 
-import io.debezium.connector.oracle.logminer.valueholder.ColumnValueHolder;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValueWrapper;
 import io.debezium.connector.oracle.antlr.OracleDmlParser;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
 import io.debezium.relational.Column;
@@ -57,11 +57,11 @@ abstract class BaseDmlStringParserListener extends BaseDmlParserListener<String>
             Column column = table.columnWithName(columnName);
             Object stripedValue = ParserUtils.removeApostrophes(value);
 
-            ColumnValueHolder columnValueHolder = oldColumnValues.get(columnName);
-            if (columnValueHolder != null) { //todo this used to happen for ROWID pseudo column. Test if this is not a problem after NO_ROWID_IN_STMT option
+            LogMinerColumnValueWrapper logMinerColumnValueWrapper = oldColumnValues.get(columnName);
+            if (logMinerColumnValueWrapper != null) { //todo this used to happen for ROWID pseudo column. Test if this is not a problem after NO_ROWID_IN_STMT option
                 Object valueObject = ParserUtils.convertValueToSchemaType(column, stripedValue, converter);
-                columnValueHolder.setProcessed(true);
-                columnValueHolder.getColumnValue().setColumnData(valueObject);
+                logMinerColumnValueWrapper.setProcessed(true);
+                logMinerColumnValueWrapper.getColumnValue().setColumnData(valueObject);
             }
 
         }

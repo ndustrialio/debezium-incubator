@@ -6,10 +6,10 @@
 package io.debezium.connector.oracle.antlr.listener;
 
 import io.debezium.connector.oracle.antlr.OracleDmlParser;
-import io.debezium.connector.oracle.logminer.valueholder.ColumnValueHolder;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValueWrapper;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcrImpl;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerDmlEntry;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerDmlEntryImpl;
 import io.debezium.data.Envelope;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
 import io.debezium.relational.Column;
@@ -83,9 +83,9 @@ public class UpdateParserListener extends BaseDmlStringParserListener {
         Column column = table.columnWithName(stripedName);
         Object valueObject = ParserUtils.convertValueToSchemaType(column, stripedValue, converter);
 
-        ColumnValueHolder columnValueHolder = newColumnValues.get(stripedName);
-        columnValueHolder.setProcessed(true);
-        columnValueHolder.getColumnValue().setColumnData(valueObject);
+        LogMinerColumnValueWrapper logMinerColumnValueWrapper = newColumnValues.get(stripedName);
+        logMinerColumnValueWrapper.setProcessed(true);
+        logMinerColumnValueWrapper.getColumnValue().setColumnData(valueObject);
 
         super.enterColumn_based_update_set_clause(ctx);
     }
@@ -93,11 +93,11 @@ public class UpdateParserListener extends BaseDmlStringParserListener {
     @Override
     public void exitUpdate_statement(PlSqlParser.Update_statementContext ctx) {
         List<LogMinerColumnValue> actualNewValues = newColumnValues.values().stream()
-                .filter(ColumnValueHolder::isProcessed).map(ColumnValueHolder::getColumnValue).collect(Collectors.toList());
+                .filter(LogMinerColumnValueWrapper::isProcessed).map(LogMinerColumnValueWrapper::getColumnValue).collect(Collectors.toList());
         List<LogMinerColumnValue> actualOldValues = oldColumnValues.values().stream()
-                .filter(ColumnValueHolder::isProcessed).map(ColumnValueHolder::getColumnValue).collect(Collectors.toList());
-        LogMinerRowLcr newRecord = new LogMinerRowLcrImpl(Envelope.Operation.UPDATE, actualNewValues, actualOldValues);
-        parser.setRowLCR(newRecord);
+                .filter(LogMinerColumnValueWrapper::isProcessed).map(LogMinerColumnValueWrapper::getColumnValue).collect(Collectors.toList());
+        LogMinerDmlEntry newRecord = new LogMinerDmlEntryImpl(Envelope.Operation.UPDATE, actualNewValues, actualOldValues);
+        parser.setDmlEntry(newRecord);
         super.exitUpdate_statement(ctx);
     }
 

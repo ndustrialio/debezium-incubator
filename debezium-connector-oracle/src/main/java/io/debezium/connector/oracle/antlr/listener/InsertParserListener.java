@@ -6,9 +6,9 @@
 package io.debezium.connector.oracle.antlr.listener;
 
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
-import io.debezium.connector.oracle.logminer.valueholder.ColumnValueHolder;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcrImpl;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValueWrapper;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerDmlEntry;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerDmlEntryImpl;
 import io.debezium.connector.oracle.antlr.OracleDmlParser;
 import io.debezium.data.Envelope;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
@@ -62,7 +62,7 @@ public class InsertParserListener extends BaseDmlParserListener<Integer> {
         List<PlSqlParser.ExpressionContext> values = ctx.expressions().expression();
         for (int i = 0; i < values.size(); i++) {
             PlSqlParser.ExpressionContext value = values.get(i);
-            ColumnValueHolder columnObject = newColumnValues.get(i);
+            LogMinerColumnValueWrapper columnObject = newColumnValues.get(i);
 
             String columnName = columnObject.getColumnValue().getColumnName();
             Column column = table.columnWithName(columnName);
@@ -79,9 +79,9 @@ public class InsertParserListener extends BaseDmlParserListener<Integer> {
     @Override
     public void exitSingle_table_insert(PlSqlParser.Single_table_insertContext ctx) {
         List<LogMinerColumnValue> actualNewValues = newColumnValues.values()
-                .stream().map(ColumnValueHolder::getColumnValue).collect(Collectors.toList());
-        LogMinerRowLcr newRecord = new LogMinerRowLcrImpl(Envelope.Operation.CREATE, actualNewValues, Collections.emptyList());
-        parser.setRowLCR(newRecord);
+                .stream().map(LogMinerColumnValueWrapper::getColumnValue).collect(Collectors.toList());
+        LogMinerDmlEntry newRecord = new LogMinerDmlEntryImpl(Envelope.Operation.CREATE, actualNewValues, Collections.emptyList());
+        parser.setDmlEntry(newRecord);
         super.exitSingle_table_insert(ctx);
     }
 }

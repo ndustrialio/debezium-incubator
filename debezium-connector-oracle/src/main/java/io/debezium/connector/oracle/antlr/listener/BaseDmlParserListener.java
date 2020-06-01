@@ -8,8 +8,8 @@ package io.debezium.connector.oracle.antlr.listener;
 
 import io.debezium.connector.oracle.antlr.OracleDmlParser;
 import io.debezium.connector.oracle.logminer.OracleChangeRecordValueConverter;
-import io.debezium.connector.oracle.logminer.valueholder.ColumnValueHolder;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValueImpl;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValueWrapper;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParserBaseListener;
 import io.debezium.relational.Column;
@@ -33,8 +33,8 @@ abstract class BaseDmlParserListener<T> extends PlSqlParserBaseListener {
 
     protected OracleDmlParser parser;
 
-    Map<T, ColumnValueHolder> newColumnValues = new LinkedHashMap<>();
-    Map<T, ColumnValueHolder> oldColumnValues = new LinkedHashMap<>();
+    Map<T, LogMinerColumnValueWrapper> newColumnValues = new LinkedHashMap<>();
+    Map<T, LogMinerColumnValueWrapper> oldColumnValues = new LinkedHashMap<>();
 
     BaseDmlParserListener(String catalogName, String schemaName, OracleDmlParser parser) {
         this.parser = parser;
@@ -43,7 +43,7 @@ abstract class BaseDmlParserListener<T> extends PlSqlParserBaseListener {
         this.converter = parser.getConverters();
     }
 
-    // Defines the key of the Map of ColumnValueHolder. It could be String or Integer
+    // Defines the key of the Map of LogMinerColumnValueWrapper. It could be String or Integer
     abstract protected T getKey(Column column, int index);
 
     /**
@@ -61,8 +61,8 @@ abstract class BaseDmlParserListener<T> extends PlSqlParserBaseListener {
             int type = column.jdbcType();
             T key = getKey(column, i);
             String name = ParserUtils.stripeQuotes(column.name().toUpperCase());
-            newColumnValues.put(key, new ColumnValueHolder(new LogMinerColumnValueImpl(name, type)));
-            oldColumnValues.put(key, new ColumnValueHolder(new LogMinerColumnValueImpl(name, type)));
+            newColumnValues.put(key, new LogMinerColumnValueWrapper(new LogMinerColumnValueImpl(name, type)));
+            oldColumnValues.put(key, new LogMinerColumnValueWrapper(new LogMinerColumnValueImpl(name, type)));
         }
     }
 }

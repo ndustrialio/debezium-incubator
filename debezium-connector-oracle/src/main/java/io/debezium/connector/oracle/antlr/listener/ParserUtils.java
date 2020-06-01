@@ -6,7 +6,7 @@
 package io.debezium.connector.oracle.antlr.listener;
 
 import io.debezium.connector.oracle.logminer.OracleChangeRecordValueConverter;
-import io.debezium.connector.oracle.logminer.valueholder.ColumnValueHolder;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValueWrapper;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
 import io.debezium.relational.Column;
 import io.debezium.relational.Table;
@@ -66,11 +66,11 @@ public class ParserUtils {
      * @param oldColumnValues values in WHERE clause
      * @param table Debezium Table object
      */
-    public static void cloneOldToNewColumnValues(Map<String, ColumnValueHolder> newColumnValues, Map<String, ColumnValueHolder> oldColumnValues, Table table) {
+    public static void cloneOldToNewColumnValues(Map<String, LogMinerColumnValueWrapper> newColumnValues, Map<String, LogMinerColumnValueWrapper> oldColumnValues, Table table) {
         for (Column column : table.columns()) {
-            final ColumnValueHolder newColumnValue = newColumnValues.get(column.name());
+            final LogMinerColumnValueWrapper newColumnValue = newColumnValues.get(column.name());
             if (!newColumnValue.isProcessed()) {
-                final ColumnValueHolder oldColumnValue = oldColumnValues.get(column.name());
+                final LogMinerColumnValueWrapper oldColumnValue = oldColumnValues.get(column.name());
                 newColumnValue.setProcessed(true);
                 newColumnValue.getColumnValue().setColumnData(oldColumnValue.getColumnValue().getColumnData());
             }
