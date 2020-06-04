@@ -16,6 +16,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Arrays;
 
 import static org.fest.assertions.Assertions.assertThat;
 
@@ -120,11 +121,22 @@ public class RowMapperTest {
         verify(rs, times(3)).getInt(6);
         verify(rs, times(3)).getString(2);
 
+        // test super large DML
+        char[] chars = new char[4000];
+        Arrays.fill(chars, 'a');
+        Mockito.when(rs.getString(2)).thenReturn(new String(chars));
+        Mockito.when(rs.getInt(6)).thenReturn(1);
+        sql = RowMapper.getSqlRedo(metrics, rs);
+        assertThat(sql.length() == 40_000).isTrue();
+        verify(rs, times(13)).getInt(6);
+        verify(rs, times(13)).getString(2);
+
+        Mockito.when(rs.getInt(6)).thenReturn(0);
         Mockito.when(rs.getString(2)).thenThrow(SQLException.class);
         sql = RowMapper.getSqlRedo(metrics, rs);
         assertThat(sql.equals("")).isTrue();
-        verify(rs, times(4)).getInt(6);
-        verify(rs, times(4)).getString(2);
+        verify(rs, times(13)).getInt(6);
+        verify(rs, times(14)).getString(2);
     }
 
     @Test
@@ -139,6 +151,7 @@ public class RowMapperTest {
         tableId = null;
         try {
             tableId = RowMapper.getTableId("catalog", rs);
+            assertThat(1 == 2).isTrue();
         } catch (SQLException e) {
             assertThat(tableId).isNull();
         }
