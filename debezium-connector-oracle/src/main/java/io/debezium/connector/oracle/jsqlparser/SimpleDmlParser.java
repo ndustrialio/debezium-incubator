@@ -163,9 +163,6 @@ public class SimpleDmlParser {
         aliasName = alias == null ? "" : alias.getName().trim();
 
         List<Expression> expressions = st.getExpressions(); // new values
-        if (expressions.size() != columns.size()){
-            throw new JSQLParserException("DML has " + expressions.size() + " column values, but Table object has " + columns.size() + " columns");
-        }
         setNewValues(expressions, columns);
         Expression where = st.getWhere(); //old values
         if (where != null) {
@@ -266,6 +263,11 @@ public class SimpleDmlParser {
                 String columnName  = expr.getLeftExpression().toString();
                 columnName = ParserUtils.stripeAlias(columnName, aliasName);
                 columnName = ParserUtils.stripeQuotes(columnName);
+                Column column = table.columnWithName(columnName);
+                if (column == null) {
+                    LOGGER.trace("blacklisted column in where clause: {}", columnName);
+                    return;
+                }
                 LogMinerColumnValueWrapper logMinerColumnValueWrapper = oldColumnValues.get(columnName.toUpperCase());
                 if (logMinerColumnValueWrapper != null) {
                     logMinerColumnValueWrapper.setProcessed(true);

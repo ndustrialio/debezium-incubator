@@ -11,19 +11,24 @@ import io.debezium.connector.oracle.jsqlparser.SimpleDmlParser;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerDmlEntry;
 import io.debezium.data.Envelope;
+import io.debezium.relational.TableId;
 import io.debezium.relational.Tables;
 import io.debezium.util.IoUtil;
+import net.sf.jsqlparser.statement.update.Update;
 import org.apache.commons.lang3.StringUtils;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Collectors;
 
 import static org.fest.assertions.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 
 /**
@@ -252,14 +257,30 @@ public class OracleDmlParserTest {
         result = sqlDmlParser.parse(dml, tables, "");
         assertThat(result).isNull();
         dml = "delete from non_exiting_table "+
-                "\" where id = 6 and col1 = 2 and col2 = 'te\\xt' and col3 = 'tExt\\' and col4 is null and col5 is null " +
+                " where id = 6 and col1 = 2 and col2 = 'te\\xt' and col3 = 'tExt\\' and col4 is null and col5 is null " +
                 " and col6 is null and col8 is null and col9 is null and col10 is null and col11 is null and col12 is null";
-        try {
-            result = sqlDmlParser.parse(dml, tables, "");
-        } catch (Exception e) {
-            assertThat(result).isNull();
-        }
+        result = sqlDmlParser.parse(dml, tables, "");
+        assertThat(result).isNull();
 
+        Update update = mock(Update.class);
+        Mockito.when(update.getTables()).thenReturn(new ArrayList<>());
+        dml = "update  \"" + FULL_TABLE_NAME + "\" set col1 = 3 " +
+                " where id = 6 and col1 = 2 and col2 = 'te\\xt' and col3 = 'tExt\\' and col4 is null and col5 is null " +
+                " and col6 is null and col8 is null and col9 is null and col10 is null and col11 is null and col12 is null and col20 is null";
+        result = sqlDmlParser.parse(dml, tables, "");
+        assertThat(result.getOldValues().size() == 12).isTrue();
+
+        dml = "update \"" + FULL_TABLE_NAME + "\" set col1 = 3 " +
+                " where id = 6 and col1 = 2 and col2 = 'te\\xt' and col30 = 'tExt\\' and col4 is null and col5 is null " +
+                " and col6 is null and col8 is null and col9 is null and col10 is null and col11 is null and col21 is null";
+        result = sqlDmlParser.parse(dml, tables, "");
+        assertThat(result.getNewValues().size() == 12).isTrue();
+
+        dml = "update table1, \"" + FULL_TABLE_NAME + "\" set col1 = 3 " +
+                " where id = 6 and col1 = 2 and col2 = 'te\\xt' and col3 = 'tExt\\' and col4 is null and col5 is null " +
+                " and col6 is null and col8 is null and col9 is null and col10 is null and col11 is null and col12 is null and col20 is null";
+        result = sqlDmlParser.parse(dml, tables, "");
+        assertThat(result).isNull();
     }
 
     private void verifyUpdate(LogMinerDmlEntry record, boolean checkGeometry, boolean checkOldValues, int oldValuesNumber) {

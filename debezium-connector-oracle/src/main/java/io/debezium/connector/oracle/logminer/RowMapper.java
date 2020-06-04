@@ -97,29 +97,31 @@ public class RowMapper {
         }
     }
 
+    /**
+     * It constructs REDO_SQL. If REDO_SQL  is in a few lines, it truncates after first 40_000 characters
+     * @param metrics metrics
+     * @param rs result set
+     * @return REDO_SQL
+     */
     public static String getSqlRedo(TransactionalBufferMetrics metrics, ResultSet rs) {
-        StringBuilder result = new StringBuilder();
+        int lobLimitCounter = 9; // todo : decide on approach ( XStream chunk option) and Lob limit
+        StringBuilder result = new StringBuilder(4000);
         try {
+            result = new StringBuilder(rs.getString(SQL_REDO));
             int csf = rs.getInt(CSF);
             // 0 - indicates SQL_REDO is contained within the same row
             // 1 - indicates that either SQL_REDO is greater than 4000 bytes in size and is continued in
             // the next row returned by the ResultSet
-            if (csf == 0) {
-                return rs.getString(SQL_REDO);
-            } else {
-                result = new StringBuilder(rs.getString(SQL_REDO));
-                int lobLimit = 40000; // todo : decide on approach ( XStream chunk option) and Lob limit
-                BigDecimal scn = getScn(metrics, rs);
-                while (csf == 1) {
-                    rs.next();
-                    if (lobLimit-- == 0) {
-                        LOGGER.warn("LOB value for SCN= {} was truncated due to the connector limitation of {} MB", scn, 40);
-                        break;
-                    }
-                    csf = rs.getInt(CSF);
-                    result.append(rs.getString(SQL_REDO));
+            while (csf == 1) {
+                rs.next();
+                if (lobLimitCounter-- == 0) {
+                    LOGGER.warn("LOB value was truncated due to the connector limitation of {} MB", 40);
+                    break;
                 }
+                result.append(rs.getString(SQL_REDO));
+                csf = rs.getInt(CSF);
             }
+
         } catch (SQLException e) {
             logError(metrics, e, "SQL_REDO");
         }
