@@ -276,6 +276,7 @@ public class OracleSnapshotChangeEventSource extends HistorizedRelationalSnapsho
                         }
                         return sb.toString();
                     }).collect(Collectors.joining(","));
+            // todo this is an unnecessary code, fix unit test, then remove it
             String catalog = table.id().catalog();
             List<String> blackList = new ArrayList<>(Arrays.asList(blackListColumnStr.trim().toUpperCase().replaceAll(catalog + ".", "").split(",")));
             List<String> allColumns = new ArrayList<>(Arrays.asList(allTableColumns.toUpperCase().split(",")));

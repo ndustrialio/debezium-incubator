@@ -43,91 +43,93 @@ public class RowMapper {
     private static final int TABLE_NAME = 7;
     private static final int SEG_OWNER = 8;
 
-    public static int getOperationCode(ResultSet rs) {
+    public static int getOperationCode(TransactionalBufferMetrics metrics, ResultSet rs) {
         try {
             return rs.getInt(OPERATION_CODE);
         } catch (SQLException e) {
-            logError(e, "OPERATION_CODE");
+            logError(metrics, e, "OPERATION_CODE");
             return 0;
         }
     }
 
-    public static String getTableName(ResultSet rs)  {
+    public static String getTableName(TransactionalBufferMetrics metrics, ResultSet rs)  {
         try {
             return rs.getString(TABLE_NAME);
         } catch (SQLException e) {
-            logError(e, "TABLE_NAME");
+            logError(metrics, e, "TABLE_NAME");
             return "";
         }
     }
 
-    public static String getSegOwner(ResultSet rs)  {
+    public static String getSegOwner(TransactionalBufferMetrics metrics, ResultSet rs)  {
         try {
             return rs.getString(SEG_OWNER);
         } catch (SQLException e) {
-            logError(e, "SEG_OWNER");
+            logError(metrics, e, "SEG_OWNER");
             return "";
         }
     }
 
-    public static Timestamp getChangeTime(ResultSet rs) {
+    public static Timestamp getChangeTime(TransactionalBufferMetrics metrics, ResultSet rs) {
         try {
             return rs.getTimestamp(CHANGE_TIME);
         } catch (SQLException e) {
-            logError(e, "CHANGE_TIME");
+            logError(metrics, e, "CHANGE_TIME");
             return new Timestamp(Instant.now().getEpochSecond());
         }
     }
 
-    public static BigDecimal getScn(ResultSet rs) {
+    public static BigDecimal getScn(TransactionalBufferMetrics metrics, ResultSet rs) {
         try {
             return rs.getBigDecimal(SCN);
         } catch (SQLException e) {
-            logError(e, "SCN");
+            logError(metrics, e, "SCN");
             return new BigDecimal(-1);
         }
     }
 
-    public static String getTransactionId(ResultSet rs) {
+    public static String getTransactionId(TransactionalBufferMetrics metrics, ResultSet rs) {
         try {
             return DatatypeConverter.printHexBinary(rs.getBytes(TX_ID));
         } catch (SQLException e) {
-            logError(e, "TX_ID");
+            logError(metrics, e, "TX_ID");
             return "";
         }
     }
 
-    public static String getSqlRedo(ResultSet rs) {
-        StringBuilder result = new StringBuilder();
+    /**
+     * It constructs REDO_SQL. If REDO_SQL  is in a few lines, it truncates after first 40_000 characters
+     * @param metrics metrics
+     * @param rs result set
+     * @return REDO_SQL
+     */
+    public static String getSqlRedo(TransactionalBufferMetrics metrics, ResultSet rs) {
+        int lobLimitCounter = 9; // todo : decide on approach ( XStream chunk option) and Lob limit
+        StringBuilder result = new StringBuilder(4000);
         try {
+            result = new StringBuilder(rs.getString(SQL_REDO));
             int csf = rs.getInt(CSF);
             // 0 - indicates SQL_REDO is contained within the same row
             // 1 - indicates that either SQL_REDO is greater than 4000 bytes in size and is continued in
             // the next row returned by the ResultSet
-            if (csf == 0) {
-                return rs.getString(SQL_REDO);
-            } else {
-                result = new StringBuilder(rs.getString(SQL_REDO));
-                int lobLimit = 40000; // todo : decide on approach ( XStream chunk option) and Lob limit
-                BigDecimal scn = getScn(rs);
-                while (csf == 1) {
-                    rs.next();
-                    if (lobLimit-- == 0) {
-                        LOGGER.warn("LOB value for SCN= {} was truncated due to the connector limitation of {} MB", scn, 40);
-                        break;
-                    }
-                    csf = rs.getInt(CSF);
-                    result.append(rs.getString(SQL_REDO));
+            while (csf == 1) {
+                rs.next();
+                if (lobLimitCounter-- == 0) {
+                    LOGGER.warn("LOB value was truncated due to the connector limitation of {} MB", 40);
+                    break;
                 }
+                result.append(rs.getString(SQL_REDO));
+                csf = rs.getInt(CSF);
             }
+
         } catch (SQLException e) {
-            logError(e, "SQL_REDO");
+            logError(metrics, e, "SQL_REDO");
         }
         return result.toString();
     }
 
-    static void logError(SQLException e, String s) {
-        LOGGER.error("Cannot get {}. This entry from log miner will be lost due to the {}", s, e);
+    private static void logError(TransactionalBufferMetrics metrics, SQLException e, String s) {
+        LogMinerHelper.logError(metrics, "Cannot get {}. This entry from log miner will be lost due to the {}", s, e);
     }
 
     public static TableId getTableId(String catalogName, ResultSet rs) throws SQLException {

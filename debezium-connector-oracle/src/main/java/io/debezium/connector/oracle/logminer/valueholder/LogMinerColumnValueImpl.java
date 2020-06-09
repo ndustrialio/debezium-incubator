@@ -5,10 +5,12 @@
  */
 package io.debezium.connector.oracle.logminer.valueholder;
 
+import io.debezium.connector.oracle.antlr.listener.ParserUtils;
+
 import java.util.Objects;
 
 /**
- * This class mimics the API of oracle.streams.DefaultColumnValue implementation
+ * This class stores parsed column info
  *
  */
 public class LogMinerColumnValueImpl implements LogMinerColumnValue {
@@ -23,11 +25,6 @@ public class LogMinerColumnValueImpl implements LogMinerColumnValue {
     }
 
     @Override
-    public int getColumnDataType() {
-        return columnType;
-    }
-
-    @Override
     public Object getColumnData() {
         return columnData;
     }
@@ -39,16 +36,11 @@ public class LogMinerColumnValueImpl implements LogMinerColumnValue {
 
     @Override
     public void setColumnData(Object columnData) {
-        this.columnData = columnData;
-    }
-
-    @Override
-    public String toString() {
-        return "LogMinerColumnValueImpl{" +
-                "columnName='" + columnName + '\'' +
-                ", columnData=" + columnData +
-                ", columnType=" + columnType +
-                '}';
+        if (columnData instanceof String) {
+            this.columnData = ParserUtils.replaceDoubleBackSlashes((String) columnData);
+        } else {
+            this.columnData = columnData;
+        }
     }
 
     @Override

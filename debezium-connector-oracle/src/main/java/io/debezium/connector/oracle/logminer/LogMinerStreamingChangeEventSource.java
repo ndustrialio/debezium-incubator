@@ -26,11 +26,29 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.SQLRecoverableException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
+
+import static io.debezium.connector.oracle.logminer.LogMinerHelper.buildDataDictionary;
+import static io.debezium.connector.oracle.logminer.LogMinerHelper.checkSupplementalLogging;
+import static io.debezium.connector.oracle.logminer.LogMinerHelper.createAuditTable;
+import static io.debezium.connector.oracle.logminer.LogMinerHelper.endMining;
+import static io.debezium.connector.oracle.logminer.LogMinerHelper.getCurrentRedoLogFiles;
+import static io.debezium.connector.oracle.logminer.LogMinerHelper.getTimeDifference;
+import static io.debezium.connector.oracle.logminer.LogMinerHelper.getFirstOnlineLogScn;
+import static io.debezium.connector.oracle.logminer.LogMinerHelper.setNlsSessionParameters;
+import static io.debezium.connector.oracle.logminer.LogMinerHelper.setRedoLogFilesForMining;
+import static io.debezium.connector.oracle.logminer.LogMinerHelper.getEndScn;
+import static io.debezium.connector.oracle.logminer.LogMinerHelper.logWarn;
+import static io.debezium.connector.oracle.logminer.LogMinerHelper.logError;
+import static io.debezium.connector.oracle.logminer.LogMinerHelper.startOnlineMining;
+import static io.debezium.connector.oracle.logminer.LogMinerHelper.getLastScnFromTheOldestOnlineRedo;
 
 /**
  * A {@link StreamingChangeEventSource} based on Oracle's LogMiner utility.
@@ -46,8 +64,6 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     private final OracleDatabaseSchema schema;
     private final OracleOffsetContext offsetContext;
     private final TransactionalBuffer transactionalBuffer;
-    // todo introduce injection of appropriate parser
-//    private final OracleDmlParser dmlParser;
     private final SimpleDmlParser dmlParser;
     private final String catalogName;
     private OracleConnectorConfig connectorConfig;
@@ -55,8 +71,8 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     private final LogMinerMetrics logMinerMetrics;
     private final OracleConnectorConfig.LogMiningStrategy strategy;
     private final boolean isContinuousMining;
-    private long lastProcessedScn;
-    private long nextScn;
+    private long startScn;
+    private long endScn;
 
     public LogMinerStreamingChangeEventSource(OracleConnectorConfig connectorConfig, OracleOffsetContext offsetContext,
                                               OracleConnection jdbcConnection, EventDispatcher<TableId> dispatcher,
@@ -68,17 +84,12 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
         this.schema = schema;
         this.offsetContext = offsetContext;
         OracleChangeRecordValueConverter converters = new OracleChangeRecordValueConverter(jdbcConnection);
-
         this.connectorConfig = connectorConfig;
-
-//        this.dmlParser = new OracleDmlParser(true, connectorConfig.getDatabaseName(), connectorConfig.getSchemaName(),
-//                converters);
-        this.dmlParser = new SimpleDmlParser(connectorConfig.getDatabaseName(), connectorConfig.getSchemaName(), converters);
         this.catalogName = (connectorConfig.getPdbName() != null) ? connectorConfig.getPdbName() : connectorConfig.getDatabaseName();
+        this.dmlParser = new SimpleDmlParser(catalogName, connectorConfig.getSchemaName(), converters);
         this.transactionalBufferMetrics = new TransactionalBufferMetrics(taskContext);
         this.transactionalBufferMetrics.register(LOGGER);
         transactionalBuffer = new TransactionalBuffer(connectorConfig.getLogicalName(), errorHandler, transactionalBufferMetrics);
-
         this.logMinerMetrics = new LogMinerMetrics(taskContext);
         this.logMinerMetrics.register(LOGGER);
         this.strategy = connectorConfig.getLogMiningStrategy();
@@ -89,132 +100,132 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
      * This is the loop to get changes from LogMiner
      *
      * @param context change event source context
-     * @throws InterruptedException an exception
      */
     @Override
-    public void execute(ChangeEventSourceContext context) throws InterruptedException {
+    public void execute(ChangeEventSourceContext context) {
         Metronome metronome;
 
         // The top outer loop gives the resiliency on the network disconnections. This is critical for cloud deployment.
         while(context.isRunning()) {
             try (Connection connection = jdbcConnection.connection(false);
                  PreparedStatement fetchFromMiningView =
-                         connection.prepareStatement(SqlUtils.
-                                 queryLogMinerContents(connectorConfig.getSchemaName(), jdbcConnection.username(), schema, SqlUtils.LOGMNR_CONTENTS_VIEW))) {
+                         connection.prepareStatement(SqlUtils.queryLogMinerContents(connectorConfig.getSchemaName(), jdbcConnection.username(), schema))) {
 
-                lastProcessedScn = offsetContext.getScn();
+                startScn = offsetContext.getScn();
+                createAuditTable(connection);
+                LOGGER.trace("current millis {}, db time {}", System.currentTimeMillis(), getTimeDifference(connection));
+                transactionalBufferMetrics.setTimeDifference(new AtomicLong(getTimeDifference(connection)));
 
-                long oldestScnInOnlineRedo = LogMinerHelper.getFirstOnlineLogScn(connection);
-                if (lastProcessedScn < oldestScnInOnlineRedo) {
+                if (!isContinuousMining && startScn < getFirstOnlineLogScn(connection)) {
                     throw new RuntimeException("Online REDO LOG files don't contain the offset SCN. Clean offset and start over");
                 }
 
                 // 1. Configure Log Miner to mine online redo logs
-                LogMinerHelper.setNlsSessionParameters(jdbcConnection);
-                LogMinerHelper.setSupplementalLoggingForWhitelistedTables(jdbcConnection, connection, connectorConfig.getPdbName(), schema.tableIds());
-
-                LOGGER.debug("Data dictionary catalog = {}", strategy.getValue());
+                setNlsSessionParameters(jdbcConnection);
+                checkSupplementalLogging(jdbcConnection, connectorConfig.getPdbName());
 
                 if (strategy == OracleConnectorConfig.LogMiningStrategy.CATALOG_IN_REDO) {
-                    LogMinerHelper.buildDataDictionary(connection);
+                    buildDataDictionary(connection);
                 }
 
                 if (!isContinuousMining) {
-                    LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
+                    setRedoLogFilesForMining(connection, startScn);
                 }
-                LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
-                String currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
 
                 LogMinerQueryResultProcessor processor = new LogMinerQueryResultProcessor(context, logMinerMetrics, transactionalBuffer,
                         dmlParser, offsetContext, schema, dispatcher, transactionalBufferMetrics, catalogName, clock);
 
                 // 2. Querying LogMiner view while running
+                Set<String> currentRedoLogFiles = getCurrentRedoLogFiles(connection, logMinerMetrics);
                 while (context.isRunning()) {
+
+                    endScn = getEndScn(connection, startScn, logMinerMetrics);
+                    LOGGER.trace("startScn: {}, endScn: {}", startScn, endScn);
+
                     metronome = Metronome.sleeper(Duration.ofMillis(logMinerMetrics.getMillisecondToSleepBetweenMiningQuery()), clock);
+                    metronome.pause();
 
-                    nextScn = LogMinerHelper.getNextScn(connection, lastProcessedScn, logMinerMetrics);
-                    LOGGER.trace("startScn: {}, endScn: {}", lastProcessedScn, nextScn);
-
-                    String possibleNewCurrentLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
-
-                    if (!currentRedoLogFile.equals(possibleNewCurrentLogFile)) {
-                        LOGGER.debug("\n\n***** SWITCH occurred *****\n" + " from:{} , to:{} \n\n", currentRedoLogFile, possibleNewCurrentLogFile);
+                    Set<String> possibleNewCurrentLogFile = getCurrentRedoLogFiles(connection, logMinerMetrics);
+                    if (!currentRedoLogFiles.equals(possibleNewCurrentLogFile)) {
+                        LOGGER.debug("\n\n***** SWITCH occurred *****\n" + " from:{} , to:{} \n\n", currentRedoLogFiles, possibleNewCurrentLogFile);
 
                         // This is the way to mitigate PGA leak.
                         // With one mining session it grows and maybe there is another way to flush PGA, but at this point we use new mining session
-                        LogMinerHelper.endMining(connection);
+                        endMining(connection);
 
                         if (!isContinuousMining) {
                             if (strategy == OracleConnectorConfig.LogMiningStrategy.CATALOG_IN_REDO) {
-                                LogMinerHelper.buildDataDictionary(connection);
+                                buildDataDictionary(connection);
                             }
 
-                            // Abandon long running transactions
-                            Optional<Long> oldestScnToAbandonTransactions = LogMinerHelper.getLastScnFromTheOldestOnlineRedo(connection, offsetContext.getScn());
-                            oldestScnToAbandonTransactions.ifPresent(nextOldestScn -> {
-                                transactionalBuffer.abandonLongTransactions(nextOldestScn);
-                                LOGGER.debug("After abandoning, offset before: {}, offset after:{}", offsetContext.getScn(), nextOldestScn);
-                                offsetContext.setScn(nextOldestScn);
-                                lastProcessedScn = transactionalBuffer.getLargestScn().equals(BigDecimal.ZERO) ? nextScn : transactionalBuffer.getLargestScn().longValue();
-                            });
-
-                            LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
+                            abandonOldTransactionsIfExist(connection);
+                            setRedoLogFilesForMining(connection, startScn);
                         }
 
-                        LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
-
-                        currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
+                        currentRedoLogFiles = getCurrentRedoLogFiles(connection, logMinerMetrics);
                     }
 
-                    LogMinerHelper.startOnlineMining(connection, lastProcessedScn, nextScn, strategy, isContinuousMining);
+                    startOnlineMining(connection, startScn, endScn, strategy, isContinuousMining);
 
                     Instant startTime = Instant.now();
-                    fetchFromMiningView.setLong(1, lastProcessedScn);
-                    fetchFromMiningView.setLong(2, nextScn);
+                    fetchFromMiningView.setFetchSize(10_000);
+                    fetchFromMiningView.setLong(1, startScn);
+                    fetchFromMiningView.setLong(2, endScn);
 
                     ResultSet res = fetchFromMiningView.executeQuery();
                     logMinerMetrics.setLastLogMinerQueryDuration(Duration.between(startTime, Instant.now()));
-                    int processedCount = processor.processResult(res);
+                    processor.processResult(res);
 
-                    if (processedCount < logMinerMetrics.getFetchedRecordSizeLimitToFallAsleep()) {
-                        LOGGER.trace("sleeping for {} milliseconds", logMinerMetrics.getMillisecondToSleepBetweenMiningQuery());
-                        metronome.pause();
-                    }
-
-                    // get largest scn from the last uncommitted transaction and set as last processed scn
+                    updateStartScn();
                     LOGGER.trace("largest scn = {}", transactionalBuffer.getLargestScn());
-
-                    lastProcessedScn  = transactionalBuffer.getLargestScn().equals(BigDecimal.ZERO) ? nextScn : transactionalBuffer.getLargestScn().longValue();
 
                     // update SCN in offset context only if buffer is empty, otherwise we update offset in TransactionalBuffer
                     if (transactionalBuffer.isEmpty()) {
-                        offsetContext.setScn(lastProcessedScn);
-                        transactionalBuffer.resetLargestScn();
+                        offsetContext.setScn(startScn);
+                        transactionalBuffer.resetLargestScn(null);
                     }
 
                     res.close();
                     // we don't do it for other modes to save time on building data dictionary
 //                    if (strategy == OracleConnectorConfig.LogMiningStrategy.ONLINE_CATALOG) {
-//                        LogMinerHelper.endMining(connection);
-//                        LogMinerHelper.setRedoLogFilesForMining(connection, lastProcessedScn);
-//                        currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection, logMinerMetrics);
-//                        LogMinerHelper.updateLogMinerMetrics(connection, logMinerMetrics);
+//                        endMining(connection);
+//                        updateRedoLogMetrics(connection, logMinerMetrics);
+//                        currentRedoLogFiles = getCurrentRedoLogFiles(connection, logMinerMetrics);
 //                    }
                 }
             } catch (Throwable e) {
                 if (connectionProblem(e)) {
-                    LOGGER.warn("Disconnection occurred. {} ", e.toString());
+                    logWarn(transactionalBufferMetrics, "Disconnection occurred. {} ", e.toString());
                     continue;
                 }
-                LOGGER.error("Mining session was stopped due to the {} ", e.toString());
+                logError(transactionalBufferMetrics, "Mining session was stopped due to the {} ", e.toString());
                 throw new RuntimeException(e);
             } finally {
-                LOGGER.info("lastProcessedScn={}, nextScn={}, offsetContext.getScn()={}", lastProcessedScn, nextScn, offsetContext.getScn());
+                LOGGER.info("startScn={}, endScn={}, offsetContext.getScn()={}", startScn, endScn, offsetContext.getScn());
                 LOGGER.info("Transactional buffer metrics dump: {}", transactionalBufferMetrics.toString());
                 LOGGER.info("Transactional buffer dump: {}", transactionalBuffer.toString());
                 LOGGER.info("LogMiner metrics dump: {}", logMinerMetrics.toString());
             }
         }
+    }
+
+    private void abandonOldTransactionsIfExist(Connection connection) throws SQLException {
+        Optional<Long> lastScnToAbandonTransactions = getLastScnFromTheOldestOnlineRedo(connection, offsetContext.getScn());
+        lastScnToAbandonTransactions.ifPresent(thresholdScn -> {
+            logWarn(transactionalBufferMetrics, "All transactions with first SCN <= {} will be abandoned, offset: {}", thresholdScn, offsetContext.getScn());
+            transactionalBuffer.abandonLongTransactions(thresholdScn);
+            offsetContext.setScn(thresholdScn);
+            updateStartScn();
+        });
+    }
+
+    private void updateStartScn() {
+        long nextStartScn  = transactionalBuffer.getLargestScn().equals(BigDecimal.ZERO) ? endScn : transactionalBuffer.getLargestScn().longValue();
+        if (nextStartScn <= startScn) {
+            // When system is idle, largest SCN may stay unchanged, move it forward then
+            transactionalBuffer.resetLargestScn(endScn);
+        }
+        startScn = endScn;
     }
 
     @Override

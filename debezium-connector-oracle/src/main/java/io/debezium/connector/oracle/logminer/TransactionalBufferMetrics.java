@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @ThreadSafe
 public class TransactionalBufferMetrics extends Metrics implements TransactionalBufferMetricsMXBean {
     private AtomicLong oldestScn = new AtomicLong();
+    private AtomicLong committedScn = new AtomicLong();
     private AtomicReference<Duration> lagFromTheSource = new AtomicReference<>();
     private AtomicInteger activeTransactions = new AtomicInteger();
     private AtomicLong rolledBackTransactions = new AtomicLong();
@@ -31,17 +32,22 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     private AtomicLong committedDmlCounter = new AtomicLong();
     private AtomicReference<Duration> maxLagFromTheSource = new AtomicReference<>();
     private AtomicReference<Duration> minLagFromTheSource = new AtomicReference<>();
-    private AtomicReference<Duration> totalLagsFromTheSource = new AtomicReference<>();
+    private AtomicReference<Duration> averageLagsFromTheSource = new AtomicReference<>();
     private AtomicReference<Set<String>> abandonedTransactionIds = new AtomicReference<>();
     private AtomicReference<Set<String>> rolledBackTransactionIds = new AtomicReference<>();
     private Instant startTime;
     private static long MILLIS_PER_SECOND = 1000L;
+    private AtomicLong timeDifference = new AtomicLong();
+    private AtomicInteger errorCounter = new AtomicInteger();
+    private AtomicInteger warningCounter = new AtomicInteger();
+    private AtomicInteger scnFreezeCounter = new AtomicInteger();
 
     TransactionalBufferMetrics(CdcSourceTaskContext taskContext) {
         super(taskContext, "log-miner-transactional-buffer");
         startTime = Instant.now();
         oldestScn.set(-1);
-        lagFromTheSource.set(Duration.ZERO);
+        committedScn.set(-1);
+        timeDifference.set(0);
         reset();
     }
 
@@ -50,17 +56,31 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         oldestScn.set(scn);
     }
 
-    // todo deal with timezones
-    void setLagFromTheSource(Instant changeTime){
+    public void setCommittedScn(Long scn){
+        committedScn.set(scn);
+    }
+
+    public void setTimeDifference(AtomicLong timeDifference) {
+        this.timeDifference = timeDifference;
+    }
+
+    void calculateLagMetrics(Instant changeTime){
         if (changeTime != null) {
-            lagFromTheSource.set(Duration.between(changeTime, Instant.now()));
+            Instant correctedChangeTime = changeTime.plus(Duration.ofMillis(timeDifference.longValue()));
+            lagFromTheSource.set(Duration.between(correctedChangeTime, Instant.now()));
+
             if (maxLagFromTheSource.get().toMillis() < lagFromTheSource.get().toMillis()) {
                 maxLagFromTheSource.set(lagFromTheSource.get());
             }
             if (minLagFromTheSource.get().toMillis() > lagFromTheSource.get().toMillis()) {
                 minLagFromTheSource.set(lagFromTheSource.get());
             }
-            totalLagsFromTheSource.set(totalLagsFromTheSource.get().plus(lagFromTheSource.get()));
+
+            if (averageLagsFromTheSource.get().isZero()) {
+                averageLagsFromTheSource.set(lagFromTheSource.get());
+            } else {
+                averageLagsFromTheSource.set(averageLagsFromTheSource.get().plus(lagFromTheSource.get()).dividedBy(2));
+            }
         }
     }
 
@@ -82,10 +102,6 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         capturedDmlCounter.incrementAndGet();
     }
 
-    void decrementCapturedDmlCounter(int counter) {
-        capturedDmlCounter.getAndAdd(-counter);
-    }
-
     void incrementCommittedDmlCounter(int counter) {
         committedDmlCounter.getAndAdd(counter);
     }
@@ -102,10 +118,39 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
         }
     }
 
+    /**
+     * This is to increase logged logError counter.
+     * There are other ways to monitor the log, but this is just to check if there are any.
+     */
+    void incrementErrorCounter() {
+        errorCounter.incrementAndGet();
+    }
+
+    /**
+     * This is to increase logged warning counter
+     * There are other ways to monitor the log, but this is just to check if there are any.
+     */
+    void incrementWarningCounter() {
+        warningCounter.incrementAndGet();
+    }
+
+    /**
+     * This counter to accumulate number of encountered observations when SCN does not change in the offset.
+     * This call indicates an uncommitted oldest transaction in the buffer.
+     */
+    void incrementScnFreezeCounter() {
+        scnFreezeCounter.incrementAndGet();
+    }
+
     // implemented getters
     @Override
     public Long getOldestScn() {
         return oldestScn.get();
+    }
+
+    @Override
+    public Long getCommittedScn() {
+        return committedScn.get();
     }
 
     @Override
@@ -125,12 +170,19 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
 
     @Override
     public long getCommitThroughput() {
-        return committedTransactions.get() * MILLIS_PER_SECOND / Duration.between(startTime, Instant.now()).toMillis();
+        long timeSpent = Duration.between(startTime, Instant.now()).isZero() ? 1 : Duration.between(startTime, Instant.now()).toMillis();
+        return committedTransactions.get() * MILLIS_PER_SECOND / timeSpent;
     }
 
     @Override
     public long getCapturedDmlThroughput() {
-        return committedDmlCounter.get() * MILLIS_PER_SECOND / Duration.between(startTime, Instant.now()).toMillis();
+        long timeSpent = Duration.between(startTime, Instant.now()).isZero() ? 1 : Duration.between(startTime, Instant.now()).toMillis();
+        return committedDmlCounter.get() * MILLIS_PER_SECOND / timeSpent;
+    }
+
+    @Override
+    public long getCapturedDmlCount() {
+        return capturedDmlCounter.longValue();
     }
 
     @Override
@@ -150,7 +202,7 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
 
     @Override
     public long getAverageLagFromSource() {
-        return totalLagsFromTheSource.get().toMillis()/(capturedDmlCounter.get() == 0 ? 1 : capturedDmlCounter.get());
+        return averageLagsFromTheSource.get().toMillis();
     }
 
     @Override
@@ -164,24 +216,43 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
     }
 
     @Override
+    public int getErrorCounter() {
+        return errorCounter.get();
+    }
+
+    @Override
+    public int getWarningCounter() {
+        return warningCounter.get();
+    }
+
+    @Override
+    public int getScnFreezeCounter() {
+        return scnFreezeCounter.get();
+    }
+
+    @Override
     public void reset() {
         maxLagFromTheSource.set(Duration.ZERO);
         minLagFromTheSource.set(Duration.ZERO);
-        totalLagsFromTheSource.set(Duration.ZERO);
+        averageLagsFromTheSource.set(Duration.ZERO);
         activeTransactions.set(0);
         rolledBackTransactions.set(0);
         committedTransactions.set(0);
         capturedDmlCounter.set(0);
         committedDmlCounter.set(0);
-        totalLagsFromTheSource.set(Duration.ZERO);
         abandonedTransactionIds.set(new HashSet<>());
         rolledBackTransactionIds.set(new HashSet<>());
+        lagFromTheSource.set(Duration.ZERO);
+        errorCounter.set(0);
+        warningCounter.set(0);
+        scnFreezeCounter.set(0);
     }
 
     @Override
     public String toString() {
         return "TransactionalBufferMetrics{" +
                 "oldestScn=" + oldestScn.get() +
+                ", committedScn=" + committedScn.get() +
                 ", lagFromTheSource=" + lagFromTheSource.get() +
                 ", activeTransactions=" + activeTransactions.get() +
                 ", rolledBackTransactions=" + rolledBackTransactions.get() +
@@ -190,8 +261,11 @@ public class TransactionalBufferMetrics extends Metrics implements Transactional
                 ", committedDmlCounter=" + committedDmlCounter.get() +
                 ", maxLagFromTheSource=" + maxLagFromTheSource.get() +
                 ", minLagFromTheSource=" + minLagFromTheSource.get() +
-                ", averageLagsFromTheSource=" + getAverageLagFromSource() +
+                ", averageLagsFromTheSource=" + averageLagsFromTheSource.get() +
                 ", abandonedTransactionIds=" + abandonedTransactionIds.get() +
+                ", errorCounter=" + errorCounter.get() +
+                ", warningCounter=" + warningCounter.get() +
+                ", scnFreezeCounter=" + scnFreezeCounter.get() +
                 '}';
     }
 }

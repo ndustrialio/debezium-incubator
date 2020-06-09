@@ -12,6 +12,7 @@ import io.debezium.metrics.Metrics;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -24,7 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     private AtomicLong currentScn = new AtomicLong();
     private AtomicInteger capturedDmlCount = new AtomicInteger();
-    private AtomicReference<String> currentLogFileName;
+    private AtomicReference<String[]> currentLogFileName;
     private AtomicReference<String[]> redoLogStatus;
     private AtomicInteger switchCounter = new AtomicInteger();
     private AtomicReference<Duration> lastLogMinerQueryDuration = new AtomicReference<>();
@@ -33,16 +34,24 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     private AtomicReference<Duration> lastProcessedCapturedBatchDuration = new AtomicReference<>();
     private AtomicInteger processedCapturedBatchCount = new AtomicInteger();
     private AtomicReference<Duration> averageProcessedCapturedBatchDuration = new AtomicReference<>();
-    private AtomicInteger maxBatchSize = new AtomicInteger();
+    private AtomicInteger batchSize = new AtomicInteger();
     private AtomicInteger millisecondToSleepBetweenMiningQuery = new AtomicInteger();
-    private AtomicInteger fetchedRecordSizeLimitToFallAsleep = new AtomicInteger();
+
+    private final int MAX_SLEEP_TIME = 3_000;
+    private final int DEFAULT_SLEEP_TIME = 1_000;
+    private final int MIN_SLEEP_TIME = 100;
+
+    private final int MIN_BATCH_SIZE = 1_000;
+    private final int MAX_BATCH_SIZE = 100_000;
+    private final int DEFAULT_BATCH_SIZE = 5_000;
+
+    private final int SLEEP_TIME_INCREMENT = 200;
 
     LogMinerMetrics(CdcSourceTaskContext taskContext) {
         super(taskContext, "log-miner");
 
-        maxBatchSize.set(2000);
-        millisecondToSleepBetweenMiningQuery.set(1000);
-        fetchedRecordSizeLimitToFallAsleep.set(50);
+        batchSize.set(DEFAULT_BATCH_SIZE);
+        millisecondToSleepBetweenMiningQuery.set(DEFAULT_SLEEP_TIME);
 
         currentScn.set(-1);
         capturedDmlCount.set(0);
@@ -62,12 +71,12 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
         currentScn.set(scn);
     }
 
-    public void setCapturedDmlCount(int count){
-        capturedDmlCount.set(count);
+    public void incrementCapturedDmlCount() {
+        capturedDmlCount.incrementAndGet();
     }
 
-    public void setCurrentLogFileName(String name){
-        currentLogFileName.set(name);
+    public void setCurrentLogFileName(Set<String> names){
+        currentLogFileName.set(names.stream().toArray(String[]::new));
     }
 
     public void setRedoLogStatus(Map<String, String> status){
@@ -99,7 +108,7 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     }
 
     @Override
-    public String getCurrentRedoLogFileName() {
+    public String[] getCurrentRedoLogFileName() {
         return currentLogFileName.get();
     }
 
@@ -144,39 +153,36 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     }
 
     @Override
-    public int getMaxBatchSize() {
-        return maxBatchSize.get();
+    public int getBatchSize() {
+        return batchSize.get();
     }
 
     @Override
-    public int getMillisecondToSleepBetweenMiningQuery() {
+    public Integer getMillisecondToSleepBetweenMiningQuery() {
         return millisecondToSleepBetweenMiningQuery.get();
-    }
-
-    @Override
-    public int getFetchedRecordSizeLimitToFallAsleep() {
-        return fetchedRecordSizeLimitToFallAsleep.get();
     }
 
     // MBean accessible setters
     @Override
-    public void setMaxBatchSize(int size) {
-        if (size >= 100 && size <= 10_000) {
-            maxBatchSize.set(size);
+    public void setBatchSize(int size) {
+        if (size >= MIN_BATCH_SIZE && size <= MAX_BATCH_SIZE) {
+            batchSize.set(size);
         }
     }
 
     @Override
-    public void setMillisecondToSleepBetweenMiningQuery(int milliseconds) {
-        if (milliseconds >= 10 && milliseconds <= 2000){
+    public void setMillisecondToSleepBetweenMiningQuery(Integer milliseconds) {
+        if (milliseconds != null && milliseconds >= MIN_SLEEP_TIME && milliseconds < MAX_SLEEP_TIME){
             millisecondToSleepBetweenMiningQuery.set(milliseconds);
         }
     }
 
     @Override
-    public void setFetchedRecordSizeLimitToFallAsleep(int size) {
-        if (size >= 50 && size <= 200) {
-            fetchedRecordSizeLimitToFallAsleep.set(size);
+    public void changeSleepingTime(boolean increment) {
+        int sleepTime = millisecondToSleepBetweenMiningQuery.get();
+        int change = increment ?  SLEEP_TIME_INCREMENT : -SLEEP_TIME_INCREMENT;
+        if (sleepTime >= MIN_SLEEP_TIME && sleepTime < MAX_SLEEP_TIME){
+            millisecondToSleepBetweenMiningQuery.getAndAdd(change);
         }
     }
 
@@ -194,8 +200,8 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
     @Override
     public String toString() {
         return "LogMinerMetrics{" +
-                "currentScn=" + currentScn.get() +
-                ", currentLogFileName=" + currentLogFileName.get() +
+                "currentEndScn=" + currentScn.get() +
+                ", currentLogFileNames=" + Arrays.toString(currentLogFileName.get()) +
                 ", redoLogStatus=" + Arrays.toString(redoLogStatus.get()) +
                 ", capturedDmlCount=" + capturedDmlCount.get() +
                 ", switchCounter=" + switchCounter.get() +
@@ -205,9 +211,8 @@ public class LogMinerMetrics extends Metrics implements LogMinerMetricsMXBean {
                 ", lastProcessedCapturedBatchDuration=" + lastProcessedCapturedBatchDuration.get() +
                 ", processedCapturedBatchCount=" + processedCapturedBatchCount.get() +
                 ", averageProcessedCapturedBatchDuration=" + averageProcessedCapturedBatchDuration.get() +
-                ", maxBatchSize=" + maxBatchSize.get() +
                 ", millisecondToSleepBetweenMiningQuery=" + millisecondToSleepBetweenMiningQuery.get() +
-                ", maxBatchSize=" + maxBatchSize.get() +
+                ", batchSize=" + batchSize.get() +
                 '}';
     }
 }

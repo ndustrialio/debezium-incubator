@@ -22,7 +22,7 @@ public interface LogMinerMetricsMXBean {
      *
      * @return full path or NULL if an exception occurs.
      */
-    String getCurrentRedoLogFileName();
+    String[] getCurrentRedoLogFileName();
 
     /**
      * Exposes states of redo logs: current, active, inactive, unused ...
@@ -76,38 +76,32 @@ public interface LogMinerMetricsMXBean {
 
     /**
      * Maximum number of entries in Log Miner view to fetch. This is used to set the diapason of the SCN in mining query.
-     * If difference between "start SCN" and "end SCN" to mine exceeds this limit, end SCN will be set to "start SCN" + maxBatchSize
+     * If difference between "start SCN" and "end SCN" to mine exceeds this limit, end SCN will be set to "start SCN" + batchSize
      * @return the limit
      */
-    int getMaxBatchSize();
+    int getBatchSize();
 
     /**
-     * this gives ability to manipulate maximum number of entries in Log Miner view to fetch.
+     * this gives ability to manipulate number of entries in Log Miner view to fetch.
      * It has limits to prevent abnormal values
      * @param size limit
      */
-    void setMaxBatchSize(int size);
+    void setBatchSize(int size);
 
     /**
      * @return number of milliseconds for connector to sleep before fetching another batch from the Log Miner view
      */
-    int getMillisecondToSleepBetweenMiningQuery();
+    Integer getMillisecondToSleepBetweenMiningQuery();
 
     /**
      * sets number of milliseconds for connector to sleep before fetching another batch from the Log Miner view
      * @param milliseconds to sleep
      */
-    void setMillisecondToSleepBetweenMiningQuery(int milliseconds);
+    void setMillisecondToSleepBetweenMiningQuery(Integer milliseconds);
 
     /**
-     * @return number of fetched records from Log Miner view. It serves as a trigger point for connector to sleep.
-     * This helps in reducing database impact by mining query by making it less frequent
+     * change sleeping time
+     * @param increment true to add, false to deduct
      */
-    int getFetchedRecordSizeLimitToFallAsleep();
-
-    /**
-     * sets the limit of fetched records from Log Miner view.
-     * @param size number of records
-     */
-    void setFetchedRecordSizeLimitToFallAsleep(int size);
+    void changeSleepingTime(boolean increment);
 }

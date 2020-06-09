@@ -41,6 +41,12 @@ public interface TransactionalBufferMetricsMXBean {
     long getCapturedDmlThroughput();
 
     /**
+     * exposes total number of captured DMLs
+     * @return captured DML count
+     */
+    long getCapturedDmlCount();
+
+    /**
      * Exposes number of transaction, buffered in memory
      *
      * @return number of currently buffered transactions
@@ -53,6 +59,12 @@ public interface TransactionalBufferMetricsMXBean {
      * @return oldest SCN
      */
     Long getOldestScn();
+
+    /**
+     * It shows last committed SCN
+     * @return committed SCN
+     */
+    Long getCommittedScn();
 
     /**
      * This is to get the lag between latest captured change timestamp in REDO LOG and time of it's placement in the buffer
@@ -95,4 +107,19 @@ public interface TransactionalBufferMetricsMXBean {
      * action to reset some metrics
      */
     void reset();
+
+    /**
+     * This is to get logged logError counter.
+     */
+    int getErrorCounter();
+
+    /**
+     * This is to get logged warning counter
+     */
+    int getWarningCounter();
+
+    /**
+     * Get counter of encountered observations when SCN does not change in the offset.
+     */
+    int getScnFreezeCounter();
 }

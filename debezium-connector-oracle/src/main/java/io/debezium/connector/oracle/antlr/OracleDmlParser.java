@@ -10,7 +10,7 @@ import io.debezium.antlr.AntlrDdlParserListener;
 import io.debezium.antlr.DataTypeResolver;
 import io.debezium.connector.oracle.antlr.listener.OracleDmlParserListener;
 import io.debezium.connector.oracle.logminer.OracleChangeRecordValueConverter;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerDmlEntry;
 import io.debezium.ddl.parser.oracle.generated.PlSqlLexer;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
 import io.debezium.relational.SystemVariables;
@@ -24,7 +24,7 @@ import org.antlr.v4.runtime.tree.ParseTree;
  */
 public class OracleDmlParser extends AntlrDdlParser<PlSqlLexer, PlSqlParser> {
 
-    private LogMinerRowLcr rowLCR;
+    private LogMinerDmlEntry dmlEntry;
     protected String catalogName;
     protected String schemaName;
     private OracleChangeRecordValueConverter converter;
@@ -36,12 +36,12 @@ public class OracleDmlParser extends AntlrDdlParser<PlSqlLexer, PlSqlParser> {
         this.converter = converter;
     }
 
-    public LogMinerRowLcr getDmlChange(){
-       return rowLCR;
+    public LogMinerDmlEntry getDmlEntry(){
+       return dmlEntry;
     }
 
-    public void setRowLCR(LogMinerRowLcr rowLCR) {
-        this.rowLCR = rowLCR;
+    public void setDmlEntry(LogMinerDmlEntry dml) {
+        this.dmlEntry = dml;
     }
 
     @Override

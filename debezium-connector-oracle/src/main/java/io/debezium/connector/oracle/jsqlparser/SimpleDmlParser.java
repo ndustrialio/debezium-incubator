@@ -7,11 +7,11 @@ package io.debezium.connector.oracle.jsqlparser;
 
 import io.debezium.connector.oracle.antlr.listener.ParserUtils;
 import io.debezium.connector.oracle.logminer.OracleChangeRecordValueConverter;
-import io.debezium.connector.oracle.logminer.valueholder.ColumnValueHolder;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValueImpl;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcrImpl;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValueWrapper;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerDmlEntry;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerDmlEntryImpl;
 import io.debezium.data.Envelope;
 import io.debezium.relational.Column;
 import io.debezium.relational.Table;
@@ -55,18 +55,9 @@ public class SimpleDmlParser {
     protected Table table;
     private final OracleChangeRecordValueConverter converter;
     private String aliasName;
-    private LogMinerRowLcr rowLCR;
-    private Map<String, ColumnValueHolder> newColumnValues = new LinkedHashMap<>();
-    private Map<String, ColumnValueHolder> oldColumnValues = new LinkedHashMap<>();
+    private Map<String, LogMinerColumnValueWrapper> newColumnValues = new LinkedHashMap<>();
+    private Map<String, LogMinerColumnValueWrapper> oldColumnValues = new LinkedHashMap<>();
     private CCJSqlParserManager pm;
-
-    /**
-     * get parsed DML as an object
-     * @return this object
-     */
-    public LogMinerRowLcr getDmlChange() {
-        return rowLCR;
-    }
 
     /**
      * Constructor
@@ -85,13 +76,16 @@ public class SimpleDmlParser {
      * This parses a DML
      * @param dmlContent DML
      * @param tables debezium Tables
+     * @return parsed value holder class
      */
-    public void parse(String dmlContent, Tables tables, String txId){
+    public LogMinerDmlEntry parse(String dmlContent, Tables tables, String txId){
         try {
-            if (dmlContent == null) {
-                LOGGER.error("Cannot parse NULL , transaction: {}", txId);
-                rowLCR = null;
-                return;
+
+             // If a table contains Spatial data type, DML input generates two entries in REDO LOG.
+            // First with actual statement and second with NULL. It is not relevant at this point
+             if (dmlContent == null) {
+                LOGGER.debug("Cannot parse NULL , transaction: {}", txId);
+                return null;
             }
             // todo investigate: happens on CTAS
             if (dmlContent.endsWith(";null;")) {
@@ -100,6 +94,9 @@ public class SimpleDmlParser {
             if (!dmlContent.endsWith(";")) {
                 dmlContent = dmlContent + ";";
             }
+            // this is to handle cases when a record contains escape character(s). This parser throws.
+            dmlContent = dmlContent.replaceAll("\\\\", "\\\\\\\\");
+            dmlContent = dmlContent.replaceAll("= Unsupported Type", "= null"); // todo address spatial data types
 
             newColumnValues.clear();
             oldColumnValues.clear();
@@ -108,30 +105,31 @@ public class SimpleDmlParser {
             if (st instanceof Update){
                 parseUpdate(tables, (Update) st);
                 List<LogMinerColumnValue> actualNewValues = newColumnValues.values().stream()
-                        .filter(ColumnValueHolder::isProcessed).map(ColumnValueHolder::getColumnValue).collect(Collectors.toList());
+                        .filter(LogMinerColumnValueWrapper::isProcessed).map(LogMinerColumnValueWrapper::getColumnValue).collect(Collectors.toList());
                 List<LogMinerColumnValue> actualOldValues = oldColumnValues.values().stream()
-                        .filter(ColumnValueHolder::isProcessed).map(ColumnValueHolder::getColumnValue).collect(Collectors.toList());
-                rowLCR = new LogMinerRowLcrImpl(Envelope.Operation.UPDATE, actualNewValues, actualOldValues);
+                        .filter(LogMinerColumnValueWrapper::isProcessed).map(LogMinerColumnValueWrapper::getColumnValue).collect(Collectors.toList());
+                return new LogMinerDmlEntryImpl(Envelope.Operation.UPDATE, actualNewValues, actualOldValues);
 
             } else if (st instanceof Insert) {
                 parseInsert(tables, (Insert) st);
                 List<LogMinerColumnValue> actualNewValues = newColumnValues.values()
-                        .stream().map(ColumnValueHolder::getColumnValue).collect(Collectors.toList());
-                rowLCR = new LogMinerRowLcrImpl(Envelope.Operation.CREATE, actualNewValues, Collections.emptyList());
+                        .stream().map(LogMinerColumnValueWrapper::getColumnValue).collect(Collectors.toList());
+                return new LogMinerDmlEntryImpl(Envelope.Operation.CREATE, actualNewValues, Collections.emptyList());
 
             } else if (st instanceof Delete) {
                 parseDelete(tables, (Delete) st);
                 List<LogMinerColumnValue> actualOldValues = oldColumnValues.values()
-                        .stream().map(ColumnValueHolder::getColumnValue).collect(Collectors.toList());
-                rowLCR = new LogMinerRowLcrImpl(Envelope.Operation.DELETE, Collections.emptyList(), actualOldValues);
+                        .stream().map(LogMinerColumnValueWrapper::getColumnValue).collect(Collectors.toList());
+                return new LogMinerDmlEntryImpl(Envelope.Operation.DELETE, Collections.emptyList(), actualOldValues);
 
             } else {
-                throw new UnsupportedOperationException("Operation " + st + " is not supported yet");
+                LOGGER.error("Operation {} is not supported yet", st);
+                return null;
             }
 
         } catch (Throwable e) {
             LOGGER.error("Cannot parse statement : {}, transaction: {}, due to the {}", dmlContent, txId, e);
-            rowLCR = null;
+            return null;
         }
 
     }
@@ -146,8 +144,8 @@ public class SimpleDmlParser {
             int type = column.jdbcType();
             String key = column.name();
             String name = ParserUtils.stripeQuotes(column.name().toUpperCase());
-            newColumnValues.put(key, new ColumnValueHolder(new LogMinerColumnValueImpl(name, type)));
-            oldColumnValues.put(key, new ColumnValueHolder(new LogMinerColumnValueImpl(name, type)));
+            newColumnValues.put(key, new LogMinerColumnValueWrapper(new LogMinerColumnValueImpl(name, type)));
+            oldColumnValues.put(key, new LogMinerColumnValueWrapper(new LogMinerColumnValueImpl(name, type)));
         }
     }
 
@@ -165,9 +163,6 @@ public class SimpleDmlParser {
         aliasName = alias == null ? "" : alias.getName().trim();
 
         List<Expression> expressions = st.getExpressions(); // new values
-        if (expressions.size() != columns.size()){
-            throw new JSQLParserException("DML has " + expressions.size() + " column values, but Table object has " + columns.size() + " columns");
-        }
         setNewValues(expressions, columns);
         Expression where = st.getWhere(); //old values
         if (where != null) {
@@ -227,10 +222,10 @@ public class SimpleDmlParser {
             }
             Object valueObject = ParserUtils.convertValueToSchemaType(column, stripedValue, converter);
 
-            ColumnValueHolder columnValueHolder = newColumnValues.get(columnName);
-            if (columnValueHolder != null) {
-                columnValueHolder.setProcessed(true);
-                columnValueHolder.getColumnValue().setColumnData(valueObject);
+            LogMinerColumnValueWrapper logMinerColumnValueWrapper = newColumnValues.get(columnName);
+            if (logMinerColumnValueWrapper != null) {
+                logMinerColumnValueWrapper.setProcessed(true);
+                logMinerColumnValueWrapper.getColumnValue().setColumnData(valueObject);
             }
         }
     }
@@ -253,11 +248,11 @@ public class SimpleDmlParser {
                 }
                 value = ParserUtils.removeApostrophes(value);
 
-                ColumnValueHolder columnValueHolder = oldColumnValues.get(columnName.toUpperCase());
-                if (columnValueHolder != null) {
+                LogMinerColumnValueWrapper logMinerColumnValueWrapper = oldColumnValues.get(columnName.toUpperCase());
+                if (logMinerColumnValueWrapper != null) {
                     Object valueObject = ParserUtils.convertValueToSchemaType(column, value, converter);
-                    columnValueHolder.setProcessed(true);
-                    columnValueHolder.getColumnValue().setColumnData(valueObject);
+                    logMinerColumnValueWrapper.setProcessed(true);
+                    logMinerColumnValueWrapper.getColumnValue().setColumnData(valueObject);
                 }
             }
 
@@ -268,10 +263,15 @@ public class SimpleDmlParser {
                 String columnName  = expr.getLeftExpression().toString();
                 columnName = ParserUtils.stripeAlias(columnName, aliasName);
                 columnName = ParserUtils.stripeQuotes(columnName);
-                ColumnValueHolder columnValueHolder = oldColumnValues.get(columnName.toUpperCase());
-                if (columnValueHolder != null) {
-                    columnValueHolder.setProcessed(true);
-                    columnValueHolder.getColumnValue().setColumnData(null);
+                Column column = table.columnWithName(columnName);
+                if (column == null) {
+                    LOGGER.trace("blacklisted column in where clause: {}", columnName);
+                    return;
+                }
+                LogMinerColumnValueWrapper logMinerColumnValueWrapper = oldColumnValues.get(columnName.toUpperCase());
+                if (logMinerColumnValueWrapper != null) {
+                    logMinerColumnValueWrapper.setProcessed(true);
+                    logMinerColumnValueWrapper.getColumnValue().setColumnData(null);
                 }
             }
         });
