@@ -132,11 +132,19 @@ public class RowMapperTest {
         verify(rs, times(13)).getString(2);
 
         Mockito.when(rs.getInt(6)).thenReturn(0);
+        Mockito.when(rs.getString(2)).thenReturn(null);
+        sql = RowMapper.getSqlRedo(metrics, rs);
+        assertThat(sql == null).isTrue();
+        verify(rs, times(13)).getInt(6);
+        verify(rs, times(14)).getString(2);
+
+        Mockito.when(rs.getInt(6)).thenReturn(0);
         Mockito.when(rs.getString(2)).thenThrow(SQLException.class);
         sql = RowMapper.getSqlRedo(metrics, rs);
         assertThat(sql.equals("")).isTrue();
         verify(rs, times(13)).getInt(6);
-        verify(rs, times(14)).getString(2);
+        verify(rs, times(15)).getString(2);
+
     }
 
     @Test

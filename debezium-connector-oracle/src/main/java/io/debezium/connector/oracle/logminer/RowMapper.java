@@ -107,7 +107,12 @@ public class RowMapper {
         int lobLimitCounter = 9; // todo : decide on approach ( XStream chunk option) and Lob limit
         StringBuilder result = new StringBuilder(4000);
         try {
-            result = new StringBuilder(rs.getString(SQL_REDO));
+            String redo_sql = rs.getString(SQL_REDO);
+            if (redo_sql == null) {
+                return null;
+            }
+            result = new StringBuilder(redo_sql);
+
             int csf = rs.getInt(CSF);
             // 0 - indicates SQL_REDO is contained within the same row
             // 1 - indicates that either SQL_REDO is greater than 4000 bytes in size and is continued in
