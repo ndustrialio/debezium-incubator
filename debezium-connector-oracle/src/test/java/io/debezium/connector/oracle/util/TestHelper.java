@@ -5,6 +5,9 @@
  */
 package io.debezium.connector.oracle.util;
 
+import java.nio.file.Path;
+import java.sql.SQLException;
+
 import io.debezium.config.Configuration;
 import io.debezium.connector.oracle.OracleConnection;
 import io.debezium.connector.oracle.OracleConnectionFactory;
@@ -14,16 +17,33 @@ import io.debezium.relational.RelationalDatabaseConnectorConfig;
 import io.debezium.relational.history.FileDatabaseHistory;
 import io.debezium.util.Testing;
 
-import java.nio.file.Path;
-import java.sql.SQLException;
-
 public class TestHelper {
 
     public static final Path DB_HISTORY_PATH = Testing.Files.createTestingPath("file-db-history-connect.txt").toAbsolutePath();
 
     public static final String CONNECTOR_USER = "c##xstrm";
 
-    public static JdbcConfiguration defaultJdbcConfig() {
+    public static final String CONNECTOR_NAME = "oracle";
+
+    public static final String SERVER_NAME = "server1";
+
+    /**
+     * Key for schema parameter used to store a source column's type name.
+     */
+    public static final String TYPE_NAME_PARAMETER_KEY = "__debezium.source.column.type";
+
+    /**
+     * Key for schema parameter used to store a source column's type length.
+     */
+    public static final String TYPE_LENGTH_PARAMETER_KEY = "__debezium.source.column.length";
+
+    /**
+     * Key for schema parameter used to store a source column's type scale.
+     */
+    public static final String TYPE_SCALE_PARAMETER_KEY = "__debezium.source.column.scale";
+
+    private static JdbcConfiguration defaultJdbcConfig() {
+
         return JdbcConfiguration.copy(Configuration.fromSystemProperties("database."))
                 .withDefault(JdbcConfiguration.HOSTNAME, "localhost")
                 .withDefault(JdbcConfiguration.PORT, 1521)
@@ -42,15 +62,14 @@ public class TestHelper {
         Configuration.Builder builder = Configuration.create();
 
         jdbcConfiguration.forEach(
-                (field, value) -> builder.with(OracleConnectorConfig.DATABASE_CONFIG_PREFIX + field, value)
-        );
+                (field, value) -> builder.with(OracleConnectorConfig.DATABASE_CONFIG_PREFIX + field, value));
 
-        return builder.with(RelationalDatabaseConnectorConfig.SERVER_NAME, "server1")
+        return builder.with(RelationalDatabaseConnectorConfig.SERVER_NAME, SERVER_NAME)
                 .with(OracleConnectorConfig.PDB_NAME, "ORCLPDB1")
                 .with(OracleConnectorConfig.XSTREAM_SERVER_NAME, "dbzxout")
                 .with(OracleConnectorConfig.DATABASE_HISTORY, FileDatabaseHistory.class)
-                .with(OracleConnectorConfig.SCHEMA_NAME, "DEBEZIUM")
-                .with(FileDatabaseHistory.FILE_PATH, DB_HISTORY_PATH);
+                .with(FileDatabaseHistory.FILE_PATH, DB_HISTORY_PATH)
+                .with(RelationalDatabaseConnectorConfig.INCLUDE_SCHEMA_CHANGES, false);
     }
 
     public static OracleConnection defaultConnection() {
@@ -111,8 +130,7 @@ public class TestHelper {
         Configuration.Builder builder = Configuration.create();
 
         jdbcConfiguration.forEach(
-                (field, value) -> builder.with(OracleConnectorConfig.DATABASE_CONFIG_PREFIX + field, value)
-        );
+                (field, value) -> builder.with(OracleConnectorConfig.DATABASE_CONFIG_PREFIX + field, value));
 
         return builder;
     }
@@ -122,8 +140,7 @@ public class TestHelper {
         Configuration.Builder builder = Configuration.create();
 
         jdbcConfiguration.forEach(
-                (field, value) -> builder.with(OracleConnectorConfig.DATABASE_CONFIG_PREFIX + field, value)
-        );
+                (field, value) -> builder.with(OracleConnectorConfig.DATABASE_CONFIG_PREFIX + field, value));
 
         return builder;
     }

@@ -5,11 +5,6 @@
  */
 package io.debezium.connector.cassandra;
 
-import io.debezium.connector.cassandra.exceptions.CassandraConnectorConfigException;
-import io.debezium.connector.cassandra.exceptions.CassandraConnectorTaskException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -22,6 +17,12 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.Properties;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.debezium.connector.cassandra.exceptions.CassandraConnectorConfigException;
+import io.debezium.connector.cassandra.exceptions.CassandraConnectorTaskException;
 
 /**
  * A concrete implementation of {@link OffsetWriter} which tracks the progress of events
@@ -79,7 +80,8 @@ public class FileOffsetWriter implements OffsetWriter {
                     snapshotProps.setProperty(sourceTable, sourceOffset);
                 }
             }
-        } else {
+        }
+        else {
             synchronized (commitLogOffsetFileLock) {
                 if (!isOffsetProcessed(sourceTable, sourceOffset, isSnapshot)) {
                     commitLogProps.setProperty(sourceTable, sourceOffset);
@@ -94,7 +96,8 @@ public class FileOffsetWriter implements OffsetWriter {
             synchronized (snapshotOffsetFileLock) {
                 return snapshotProps.containsKey(sourceTable);
             }
-        } else {
+        }
+        else {
             synchronized (commitLogOffsetFileLock) {
                 OffsetPosition currentOffset = OffsetPosition.parse(sourceOffset);
                 OffsetPosition recordedOffset = commitLogProps.containsKey(sourceTable) ? OffsetPosition.parse((String) commitLogProps.get(sourceTable)) : null;
@@ -112,7 +115,8 @@ public class FileOffsetWriter implements OffsetWriter {
             synchronized (commitLogOffsetFileLock) {
                 saveOffset(commitLogOffsetFile, commitLogProps);
             }
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             LOGGER.error("Ignoring flush failure", e);
         }
     }
@@ -120,13 +124,15 @@ public class FileOffsetWriter implements OffsetWriter {
     public void close() {
         try {
             snapshotOffsetFileLock.release();
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             LOGGER.error("Failed to release snapshot offset file lock");
         }
 
         try {
             commitLogOffsetFileLock.release();
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             LOGGER.error("Failed to release commit log offset file lock");
         }
     }
@@ -134,7 +140,8 @@ public class FileOffsetWriter implements OffsetWriter {
     private static void saveOffset(File offsetFile, Properties props) throws IOException {
         try (FileOutputStream fos = new FileOutputStream(offsetFile)) {
             props.store(fos, null);
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             LOGGER.error("Failed to save offset for file " + offsetFile.getName(), e);
             throw e;
         }
@@ -143,7 +150,8 @@ public class FileOffsetWriter implements OffsetWriter {
     private void loadOffset(File offsetFile, Properties props) throws IOException {
         try (FileInputStream fis = new FileInputStream(offsetFile)) {
             props.load(fis);
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             LOGGER.error("Failed to load offset for file " + offsetFile.getName(), e);
             throw e;
         }
@@ -154,7 +162,8 @@ public class FileOffsetWriter implements OffsetWriter {
             try {
                 Files.createDirectories(offsetDir.toPath());
                 Files.createFile(offsetFile.toPath());
-            } catch (FileAlreadyExistsException e) {
+            }
+            catch (FileAlreadyExistsException e) {
                 // do nothing
             }
         }
@@ -163,10 +172,12 @@ public class FileOffsetWriter implements OffsetWriter {
             FileChannel channel = FileChannel.open(offsetFile.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE);
             FileLock lock = channel.tryLock();
             if (lock == null) {
-                throw new CassandraConnectorTaskException("Failed to acquire file lock on " + offsetFile.getName() + ". There might be another Cassandra Connector Task running");
+                throw new CassandraConnectorTaskException(
+                        "Failed to acquire file lock on " + offsetFile.getName() + ". There might be another Cassandra Connector Task running");
             }
             return lock;
-        } catch (OverlappingFileLockException e) {
+        }
+        catch (OverlappingFileLockException e) {
             throw new CassandraConnectorTaskException("Failed to acquire file lock on " + offsetFile.getName() + ". There might be another thread running", e);
         }
     }

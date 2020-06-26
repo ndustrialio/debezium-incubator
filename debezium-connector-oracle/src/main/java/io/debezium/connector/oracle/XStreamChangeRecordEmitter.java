@@ -3,13 +3,13 @@
  *
  * Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
  */
-package io.debezium.connector.oracle.xstream;
+package io.debezium.connector.oracle;
 
-import io.debezium.connector.oracle.BaseChangeRecordEmitter;
 import io.debezium.data.Envelope.Operation;
 import io.debezium.pipeline.spi.OffsetContext;
 import io.debezium.relational.Table;
 import io.debezium.util.Clock;
+
 import oracle.streams.ColumnValue;
 import oracle.streams.RowLCR;
 
@@ -29,11 +29,15 @@ public class XStreamChangeRecordEmitter extends BaseChangeRecordEmitter<ColumnVa
 
     @Override
     protected Operation getOperation() {
-        switch(lcr.getCommandType()) {
-            case RowLCR.INSERT: return Operation.CREATE;
-            case RowLCR.DELETE: return Operation.DELETE;
-            case RowLCR.UPDATE: return Operation.UPDATE;
-            default: throw new IllegalArgumentException("Received event of unexpected command type: " + lcr);
+        switch (lcr.getCommandType()) {
+            case RowLCR.INSERT:
+                return Operation.CREATE;
+            case RowLCR.DELETE:
+                return Operation.DELETE;
+            case RowLCR.UPDATE:
+                return Operation.UPDATE;
+            default:
+                throw new IllegalArgumentException("Received event of unexpected command type: " + lcr);
         }
     }
 

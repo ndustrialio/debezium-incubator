@@ -5,6 +5,13 @@
  */
 package io.debezium.connector.cassandra;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import java.io.File;
+import java.util.List;
+
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
@@ -17,12 +24,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.io.File;
-import java.util.List;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import io.debezium.connector.base.ChangeEventQueue;
 
 public class CommitLogProcessorTest extends EmbeddedCassandraConnectorTestBase {
     private CassandraConnectorContext context;
@@ -61,13 +63,13 @@ public class CommitLogProcessorTest extends EmbeddedCassandraConnectorTestBase {
         CommitLog.instance.sync(true);
 
         // check to make sure there are no records in the queue to begin with
-        BlockingEventQueue<Event> queue = context.getQueue();
-        assertTrue(queue.isEmpty());
+        ChangeEventQueue<Event> queue = context.getQueue();
+        assertEquals(queue.totalCapacity(), queue.remainingCapacity());
 
         // process the logs in commit log directory
         File cdcLoc = new File(DatabaseDescriptor.getCommitLogLocation());
         File[] commitLogs = CommitLogUtil.getCommitLogs(cdcLoc);
-        for (File commitLog: commitLogs) {
+        for (File commitLog : commitLogs) {
             commitLogProcessor.processCommitLog(commitLog);
         }
 
@@ -84,10 +86,12 @@ public class CommitLogProcessorTest extends EmbeddedCassandraConnectorTestBase {
                 assertFalse(record.getSource().snapshot);
                 assertEquals(record.getSource().keyspaceTable.name(), keyspaceTable("cdc_table"));
                 assertTrue(record.getSource().offsetPosition.fileName.contains(String.valueOf(CommitLog.instance.getCurrentPosition().segmentId)));
-            } else if (event instanceof EOFEvent) {
+            }
+            else if (event instanceof EOFEvent) {
                 EOFEvent eofEvent = (EOFEvent) event;
                 assertTrue(eofEvent.success);
-            } else {
+            }
+            else {
                 throw new Exception("unexpected event type");
             }
         }

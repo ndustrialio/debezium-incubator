@@ -3,9 +3,10 @@
  *
  * Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
  */
-package io.debezium.connector.oracle.xstream;
+package io.debezium.connector.oracle;
 
 import io.debezium.config.EnumeratedValue;
+
 import oracle.streams.XStreamUtility;
 
 /**
@@ -17,6 +18,7 @@ public enum OracleVersion implements EnumeratedValue {
 
     V11("11"),
     V12Plus("12+");
+
     private final String version;
 
     OracleVersion(String version) {
@@ -29,7 +31,7 @@ public enum OracleVersion implements EnumeratedValue {
     }
 
     public int getPosVersion() {
-        switch(version) {
+        switch (version) {
             case "11":
                 return XStreamUtility.POS_VERSION_V1;
             case "12+":
@@ -64,5 +66,3 @@ public enum OracleVersion implements EnumeratedValue {
         return option;
     }
 }
-
-

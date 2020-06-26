@@ -5,21 +5,21 @@
  */
 package io.debezium.connector.oracle.antlr.listener;
 
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
-import io.debezium.connector.oracle.logminer.valueholder.ColumnValueHolder;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcrImpl;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
-import io.debezium.connector.oracle.antlr.OracleDmlParser;
-import io.debezium.data.Envelope;
-import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
-import io.debezium.relational.Column;
-import io.debezium.text.ParsingException;
+import static io.debezium.antlr.AntlrDdlParser.getText;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static io.debezium.antlr.AntlrDdlParser.getText;
+import io.debezium.connector.oracle.antlr.OracleDmlParser;
+import io.debezium.connector.oracle.logminer.valueholder.ColumnValueHolder;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcrImpl;
+import io.debezium.data.Envelope;
+import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
+import io.debezium.relational.Column;
+import io.debezium.text.ParsingException;
 
 /**
  * This class parses Oracle INSERT statements.
@@ -82,7 +82,7 @@ public class InsertParserListener extends BaseDmlParserListener<Integer> {
                 .stream().map(ColumnValueHolder::getColumnValue).collect(Collectors.toList());
         LogMinerRowLcr newRecord = new LogMinerRowLcrImpl(Envelope.Operation.CREATE, actualNewValues, Collections.emptyList());
         parser.setRowLCR(newRecord);
-        //parser.signalChangeEvent();
+        // parser.signalChangeEvent();
         super.exitSingle_table_insert(ctx);
     }
 }

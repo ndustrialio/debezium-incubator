@@ -3,22 +3,23 @@
  *
  * Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
  */
-package io.debezium.connector.oracle.xstream;
+package io.debezium.connector.oracle;
 
-import io.debezium.connector.oracle.OracleOffsetContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import io.debezium.pipeline.ErrorHandler;
 import io.debezium.pipeline.EventDispatcher;
 import io.debezium.relational.RelationalDatabaseSchema;
 import io.debezium.relational.TableId;
 import io.debezium.util.Clock;
+
 import oracle.streams.ChunkColumnValue;
 import oracle.streams.DDLLCR;
 import oracle.streams.LCR;
 import oracle.streams.RowLCR;
 import oracle.streams.StreamsException;
 import oracle.streams.XStreamLCRCallbackHandler;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Handler for Oracle DDL and DML events. Just forwards events to the {@link EventDispatcher}.
@@ -27,7 +28,7 @@ import org.slf4j.LoggerFactory;
  */
 class LcrEventHandler implements XStreamLCRCallbackHandler {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(XstreamStreamingChangeEventSource.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(OracleStreamingChangeEventSource.class);
 
     private final ErrorHandler errorHandler;
     private final EventDispatcher<TableId> dispatcher;
@@ -36,7 +37,8 @@ class LcrEventHandler implements XStreamLCRCallbackHandler {
     private final OracleOffsetContext offsetContext;
     private final boolean tablenameCaseInsensitive;
 
-    public LcrEventHandler(ErrorHandler errorHandler, EventDispatcher<TableId> dispatcher, Clock clock, RelationalDatabaseSchema schema, OracleOffsetContext offsetContext, boolean tablenameCaseInsensitive) {
+    public LcrEventHandler(ErrorHandler errorHandler, EventDispatcher<TableId> dispatcher, Clock clock, RelationalDatabaseSchema schema,
+                           OracleOffsetContext offsetContext, boolean tablenameCaseInsensitive) {
         this.errorHandler = errorHandler;
         this.dispatcher = dispatcher;
         this.clock = clock;
@@ -58,8 +60,7 @@ class LcrEventHandler implements XStreamLCRCallbackHandler {
                         lcrPosition,
                         lcrPosition.getScn(),
                         recPosition != null ? recPosition : "none",
-                        recPosition != null ? recPosition.getScn() : "none"
-                );
+                        recPosition != null ? recPosition.getScn() : "none");
             }
             return;
         }
@@ -70,7 +71,7 @@ class LcrEventHandler implements XStreamLCRCallbackHandler {
         offsetContext.setSourceTime(lcr.getSourceTime().timestampValue().toInstant());
 
         try {
-            if(lcr instanceof RowLCR) {
+            if (lcr instanceof RowLCR) {
                 dispatchDataChangeEvent((RowLCR) lcr);
             }
             else if (lcr instanceof DDLLCR) {
@@ -91,7 +92,8 @@ class LcrEventHandler implements XStreamLCRCallbackHandler {
     private void dispatchDataChangeEvent(RowLCR lcr) throws InterruptedException {
         LOGGER.debug("Processing DML event {}", lcr);
 
-        if(RowLCR.COMMIT.equals(lcr.getCommandType())) {
+        if (RowLCR.COMMIT.equals(lcr.getCommandType())) {
+            dispatcher.dispatchTransactionCommittedEvent(offsetContext);
             return;
         }
 
@@ -99,8 +101,7 @@ class LcrEventHandler implements XStreamLCRCallbackHandler {
 
         dispatcher.dispatchDataChangeEvent(
                 tableId,
-                new XStreamChangeRecordEmitter(offsetContext, lcr, schema.tableFor(tableId), clock)
-        );
+                new XStreamChangeRecordEmitter(offsetContext, lcr, schema.tableFor(tableId), clock));
     }
 
     private void dispatchSchemaChangeEvent(DDLLCR ddlLcr) throws InterruptedException {
@@ -112,8 +113,7 @@ class LcrEventHandler implements XStreamLCRCallbackHandler {
 
         dispatcher.dispatchSchemaChangeEvent(
                 tableId,
-                new XStreamSchemaChangeEventEmitter(offsetContext, tableId, ddlLcr)
-        );
+                new OracleSchemaChangeEventEmitter(offsetContext, tableId, ddlLcr));
     }
 
     private TableId getTableId(LCR lcr) {
@@ -123,7 +123,6 @@ class LcrEventHandler implements XStreamLCRCallbackHandler {
         else {
             return new TableId(lcr.getSourceDatabaseName().toLowerCase(), lcr.getObjectOwner(), lcr.getObjectName().toLowerCase());
         }
-        
     }
 
     @Override

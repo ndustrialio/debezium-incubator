@@ -5,18 +5,18 @@
  */
 package io.debezium.connector.oracle.antlr.listener;
 
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
-import io.debezium.connector.oracle.logminer.valueholder.ColumnValueHolder;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcrImpl;
-import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
-import io.debezium.connector.oracle.antlr.OracleDmlParser;
-import io.debezium.data.Envelope;
-import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
-import io.debezium.relational.Column;
-
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
+
+import io.debezium.connector.oracle.antlr.OracleDmlParser;
+import io.debezium.connector.oracle.logminer.valueholder.ColumnValueHolder;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
+import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcrImpl;
+import io.debezium.data.Envelope;
+import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
+import io.debezium.relational.Column;
 
 /**
  * This class parses delete statements.

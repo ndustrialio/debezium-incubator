@@ -5,13 +5,9 @@
  */
 package io.debezium.connector.oracle.logminer;
 
-import io.debezium.connector.base.ChangeEventQueue;
-import io.debezium.connector.oracle.OracleConnector;
-import io.debezium.pipeline.DataChangeEvent;
-import io.debezium.pipeline.ErrorHandler;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import static io.debezium.config.CommonConnectorConfig.DEFAULT_MAX_BATCH_SIZE;
+import static io.debezium.config.CommonConnectorConfig.DEFAULT_MAX_QUEUE_SIZE;
+import static org.fest.assertions.Assertions.assertThat;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -20,9 +16,14 @@ import java.time.temporal.ChronoUnit;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static io.debezium.config.CommonConnectorConfig.DEFAULT_MAX_BATCH_SIZE;
-import static io.debezium.config.CommonConnectorConfig.DEFAULT_MAX_QUEUE_SIZE;
-import static org.fest.assertions.Assertions.assertThat;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+
+import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.oracle.OracleConnector;
+import io.debezium.pipeline.DataChangeEvent;
+import io.debezium.pipeline.ErrorHandler;
 
 /**
  * @author Andrey Pustovetov
@@ -47,7 +48,8 @@ public class TransactionalBufferTest {
                 .maxBatchSize(DEFAULT_MAX_BATCH_SIZE)
                 .maxQueueSize(DEFAULT_MAX_QUEUE_SIZE)
                 .build();
-        errorHandler = new ErrorHandler(OracleConnector.class, SERVER_NAME, queue, () -> { });
+        errorHandler = new ErrorHandler(OracleConnector.class, SERVER_NAME, queue, () -> {
+        });
         transactionalBuffer = new TransactionalBuffer(SERVER_NAME, errorHandler);
     }
 
@@ -64,7 +66,8 @@ public class TransactionalBufferTest {
 
     @Test
     public void testIsNotEmptyWhenTransactionIsRegistered() {
-        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, SCN, (timestamp, smallestScn) -> { });
+        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, SCN, (timestamp, smallestScn) -> {
+        });
         assertThat(transactionalBuffer.isEmpty()).isEqualTo(false);
     }
 
@@ -87,7 +90,8 @@ public class TransactionalBufferTest {
 
     @Test
     public void testIsEmptyWhenTransactionIsRolledBack() {
-        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, SCN, (timestamp, smallestScn) -> { });
+        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, SCN, (timestamp, smallestScn) -> {
+        });
         transactionalBuffer.rollback(TRANSACTION_ID);
         assertThat(transactionalBuffer.isEmpty()).isEqualTo(true);
     }
@@ -113,7 +117,8 @@ public class TransactionalBufferTest {
             smallestScnContainer.set(smallestScn);
             commitLatch.countDown();
         });
-        transactionalBuffer.registerCommitCallback(OTHER_TRANSACTION_ID, OTHER_SCN, (timestamp, smallestScn) -> { });
+        transactionalBuffer.registerCommitCallback(OTHER_TRANSACTION_ID, OTHER_SCN, (timestamp, smallestScn) -> {
+        });
         transactionalBuffer.commit(TRANSACTION_ID, TIMESTAMP, () -> true);
         commitLatch.await();
         assertThat(smallestScnContainer.get()).isEqualTo(OTHER_SCN);
@@ -121,7 +126,8 @@ public class TransactionalBufferTest {
 
     @Test
     public void testCalculateSmallestScnWhenSecondTransactionIsCommitted() throws InterruptedException {
-        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, SCN, (timestamp, smallestScn) -> { });
+        transactionalBuffer.registerCommitCallback(TRANSACTION_ID, SCN, (timestamp, smallestScn) -> {
+        });
         CountDownLatch commitLatch = new CountDownLatch(1);
         AtomicReference<BigDecimal> smallestScnContainer = new AtomicReference<>();
         transactionalBuffer.registerCommitCallback(OTHER_TRANSACTION_ID, OTHER_SCN, (timestamp, smallestScn) -> {

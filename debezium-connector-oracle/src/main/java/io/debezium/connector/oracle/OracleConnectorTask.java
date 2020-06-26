@@ -7,11 +7,8 @@ package io.debezium.connector.oracle;
 
 import java.sql.SQLException;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
-import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +21,7 @@ import io.debezium.pipeline.ChangeEventSourceCoordinator;
 import io.debezium.pipeline.DataChangeEvent;
 import io.debezium.pipeline.ErrorHandler;
 import io.debezium.pipeline.EventDispatcher;
+import io.debezium.pipeline.metrics.DefaultChangeEventSourceMetricsFactory;
 import io.debezium.pipeline.spi.OffsetContext;
 import io.debezium.relational.TableId;
 import io.debezium.schema.TopicSelector;
@@ -34,20 +32,11 @@ public class OracleConnectorTask extends BaseSourceTask {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(OracleConnectorTask.class);
     private static final String CONTEXT_NAME = "oracle-connector-task";
-
-    private enum State {
-        RUNNING, STOPPED
-    }
-
-    private final AtomicReference<State> state = new AtomicReference<>(State.STOPPED);
-
     private volatile OracleTaskContext taskContext;
     private volatile ChangeEventQueue<DataChangeEvent> queue;
     private volatile OracleConnection jdbcConnection;
-    private volatile ChangeEventSourceCoordinator coordinator;
     private volatile ErrorHandler errorHandler;
     private volatile OracleDatabaseSchema schema;
-    private volatile Map<String, ?> lastOffset;
 
     @Override
     public String version() {
@@ -55,12 +44,7 @@ public class OracleConnectorTask extends BaseSourceTask {
     }
 
     @Override
-    public void start(Configuration config) {
-        if (!state.compareAndSet(State.STOPPED, State.RUNNING)) {
-            LOGGER.info("Connector has already been started");
-            return;
-        }
-
+    public ChangeEventSourceCoordinator start(Configuration config) {
         OracleConnectorConfig connectorConfig = new OracleConnectorConfig(config);
         TopicSelector<TableId> topicSelector = OracleTopicSelector.defaultSelector(connectorConfig);
         SchemaNameAdjuster schemaNameAdjuster = SchemaNameAdjuster.create(LOGGER);
@@ -87,79 +71,48 @@ public class OracleConnectorTask extends BaseSourceTask {
                 .loggingContextSupplier(() -> taskContext.configureLoggingContext(CONTEXT_NAME))
                 .build();
 
-        errorHandler = new ErrorHandler(OracleConnector.class, connectorConfig.getLogicalName(), queue, this::cleanupResources);
+        errorHandler = new ErrorHandler(OracleConnector.class, connectorConfig.getLogicalName(), queue);
 
-        EventDispatcher<TableId> dispatcher = new EventDispatcher<>(connectorConfig, topicSelector, schema, queue,
-                connectorConfig.getTableFilters().dataCollectionFilter(), DataChangeEvent::new);
+        final OracleEventMetadataProvider metadataProvider = new OracleEventMetadataProvider();
 
-        coordinator = new ChangeEventSourceCoordinator(
+        EventDispatcher<TableId> dispatcher = new EventDispatcher<>(
+                connectorConfig,
+                topicSelector,
+                schema,
+                queue,
+                connectorConfig.getTableFilters().dataCollectionFilter(),
+                DataChangeEvent::new,
+                metadataProvider,
+                schemaNameAdjuster);
+
+        ChangeEventSourceCoordinator coordinator = new ChangeEventSourceCoordinator(
                 previousOffset,
                 errorHandler,
                 OracleConnector.class,
-                connectorConfig.getLogicalName(),
+                connectorConfig,
                 new OracleChangeEventSourceFactory(connectorConfig, jdbcConnection, errorHandler, dispatcher, clock, schema, config),
+                new DefaultChangeEventSourceMetricsFactory(),
                 dispatcher,
-                schema
-        );
+                schema);
 
-        coordinator.start(taskContext, this.queue, new OracleEventMetadataProvider());
+        coordinator.start(taskContext, this.queue, metadataProvider);
+
+        return coordinator;
     }
 
     @Override
-    public List<SourceRecord> poll() throws InterruptedException {
+    public List<SourceRecord> doPoll() throws InterruptedException {
         List<DataChangeEvent> records = queue.poll();
 
         List<SourceRecord> sourceRecords = records.stream()
-            .map(DataChangeEvent::getRecord)
-            .collect(Collectors.toList());
-
-        if (!sourceRecords.isEmpty()) {
-            this.lastOffset = sourceRecords.get(sourceRecords.size() - 1).sourceOffset();
-        }
+                .map(DataChangeEvent::getRecord)
+                .collect(Collectors.toList());
 
         return sourceRecords;
     }
 
     @Override
-    public void commit() throws InterruptedException {
-        if (lastOffset != null) {
-            coordinator.commitOffset(lastOffset);
-        }
-    }
-
-    @Override
-    public void stop() {
-        cleanupResources();
-    }
-
-    private void cleanupResources() {
-        if (!state.compareAndSet(State.RUNNING, State.STOPPED)) {
-            LOGGER.info("Connector has already been stopped");
-            return;
-        }
-
-        try {
-            if (coordinator != null) {
-                coordinator.stop();
-            }
-        }
-        catch (InterruptedException e) {
-            Thread.interrupted();
-            LOGGER.error("Interrupted while stopping coordinator", e);
-            // XStream code can end in SIGSEGV so fail the task instead of JVM crash
-            throw new ConnectException("Interrupted while stopping coordinator, failing the task");
-        }
-
-        try {
-            if (errorHandler != null) {
-                errorHandler.stop();
-            }
-        }
-        catch (InterruptedException e) {
-            Thread.interrupted();
-            LOGGER.error("Interrupted while stopping", e);
-        }
-
+    public void doStop() {
         try {
             if (jdbcConnection != null) {
                 jdbcConnection.close();

@@ -5,10 +5,6 @@
  */
 package io.debezium.connector.oracle.logminer;
 
-import io.debezium.jdbc.JdbcConnection;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -22,6 +18,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.debezium.jdbc.JdbcConnection;
 
 /**
  * This class contains methods to configure and manage Log Miner utility
@@ -49,7 +50,7 @@ public class LogMinerHelper {
      */
     public static long getCurrentScn(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement();
-             ResultSet rs = statement.executeQuery(SqlUtils.CURRENT_SCN)) {
+                ResultSet rs = statement.executeQuery(SqlUtils.CURRENT_SCN)) {
 
             if (!rs.next()) {
                 throw new IllegalStateException("Couldn't get SCN");
@@ -80,11 +81,12 @@ public class LogMinerHelper {
             if (i == 0) {
                 option = "DBMS_LOGMNR.NEW";
                 i = 1;
-            } else {
+            }
+            else {
                 option = "DBMS_LOGMNR.ADDFILE";
             }
             String addLogFileStatement = SqlUtils.getAddLogFileStatement(option, fileName);
-            LOGGER.debug("log file = {}, option: {} ", fileName, option);
+            LOGGER.info("log file = {}, option: {} ", fileName, option);
             executeCallableStatement(connection, addLogFileStatement);
         }
     }
@@ -123,7 +125,7 @@ public class LogMinerHelper {
         ResultSet result = st.executeQuery();
         while (result.next()) {
             fileName = result.getString(1);
-            LOGGER.trace(" Current Redo log fileName: {} ",  fileName);
+            LOGGER.info(" Current Redo log fileName: {} ", fileName);
         }
         st.close();
         result.close();
@@ -158,7 +160,8 @@ public class LogMinerHelper {
      * @return ResultSet result
      * @throws SQLException fatal exception, cannot continue further
      */
-    public static ResultSet getArchivedChanges(Connection conn, int batchSize, String schemaName, Iterator<Map.Entry<String, Long>> archivedFileIterator) throws SQLException {
+    public static ResultSet getArchivedChanges(Connection conn, int batchSize, String schemaName, Iterator<Map.Entry<String, Long>> archivedFileIterator)
+            throws SQLException {
 
         while (batchSize > 0 && archivedFileIterator.hasNext()) {
             String name = archivedFileIterator.next().getKey();
@@ -211,7 +214,7 @@ public class LogMinerHelper {
         res = ps.executeQuery();
         while (res.next()) {
             allLogs.put(res.getString(1), res.getLong(2));
-            LOGGER.info("Log file to mine: {}, next change = {} ", res.getString(1),res.getLong(2));
+            LOGGER.info("Log file to mine: {}, next change = {} ", res.getString(1), res.getLong(2));
         }
         ps.close();
         res.close();
@@ -253,7 +256,8 @@ public class LogMinerHelper {
         String stopMining = SqlUtils.END_LOGMNR;
         try {
             executeCallableStatement(connection, stopMining);
-        } catch (SQLException e) {
+        }
+        catch (SQLException e) {
             LOGGER.error("Cannot end mining session properly due to the:{} ", e.getMessage());
         }
     }
@@ -288,7 +292,6 @@ public class LogMinerHelper {
         executeCallableStatement(connection, addLogFileStatement);
         LOGGER.debug("Redo log file= {} added for mining", fileName);
     }
-
 
     /**
      * This method builds mining view to query changes from.
@@ -327,6 +330,7 @@ public class LogMinerHelper {
         Objects.requireNonNull(statement);
         CallableStatement s;
         s = connection.prepareCall(statement);
+        s.setQueryTimeout(60);
         s.execute();
         s.close();
     }

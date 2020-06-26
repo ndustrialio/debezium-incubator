@@ -5,10 +5,10 @@
  */
 package io.debezium.connector.oracle.logminer.valueholder;
 
-import io.debezium.data.Envelope;
-
 import java.math.BigDecimal;
 import java.util.List;
+
+import io.debezium.data.Envelope;
 
 /**
  * This interface mimics the API of oracle.streams.RowLCR interface

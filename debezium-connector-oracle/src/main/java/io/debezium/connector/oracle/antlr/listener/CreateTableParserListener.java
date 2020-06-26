@@ -5,22 +5,22 @@
  */
 package io.debezium.connector.oracle.antlr.listener;
 
+import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getColumnName;
+import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getTableName;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
-import io.debezium.ddl.parser.oracle.generated.PlSqlParserBaseListener;
 import org.antlr.v4.runtime.tree.ParseTreeListener;
 
 import io.debezium.connector.oracle.antlr.OracleDdlParser;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
+import io.debezium.ddl.parser.oracle.generated.PlSqlParserBaseListener;
 import io.debezium.relational.Column;
 import io.debezium.relational.ColumnEditor;
 import io.debezium.relational.Table;
 import io.debezium.relational.TableEditor;
 import io.debezium.relational.TableId;
-
-import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getColumnName;
-import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getTableName;
 
 public class CreateTableParserListener extends PlSqlParserBaseListener {
 
@@ -32,7 +32,7 @@ public class CreateTableParserListener extends PlSqlParserBaseListener {
     private ColumnDefinitionParserListener columnDefinitionParserListener;
 
     CreateTableParserListener(final String catalogName, final String schemaName, final OracleDdlParser parser,
-                                     final List<ParseTreeListener> listeners) {
+                              final List<ParseTreeListener> listeners) {
         this.catalogName = catalogName;
         this.schemaName = schemaName;
         this.parser = parser;
@@ -58,6 +58,7 @@ public class CreateTableParserListener extends PlSqlParserBaseListener {
             listeners.remove(columnDefinitionParserListener);
             columnDefinitionParserListener = null;
             parser.databaseTables().overwriteTable(table);
+            // parser.signalCreateTable(tableEditor.tableId(), ctx); todo ?
         }, tableEditor, table);
 
         super.exitCreate_table(ctx);
@@ -72,7 +73,8 @@ public class CreateTableParserListener extends PlSqlParserBaseListener {
                 columnDefinitionParserListener = new ColumnDefinitionParserListener(tableEditor, columnEditor, parser.dataTypeResolver());
                 columnDefinitionParserListener.enterColumn_definition(ctx);
                 listeners.add(columnDefinitionParserListener);
-            } else {
+            }
+            else {
                 columnDefinitionParserListener.setColumnEditor(columnEditor);
             }
         }, tableEditor);
@@ -88,7 +90,7 @@ public class CreateTableParserListener extends PlSqlParserBaseListener {
 
     @Override
     public void exitOut_of_line_constraint(PlSqlParser.Out_of_line_constraintContext ctx) {
-        if(ctx.PRIMARY() != null) {
+        if (ctx.PRIMARY() != null) {
             List<String> pkColumnNames = ctx.column_name().stream()
                     .map(ParserListenerUtils::getColumnName)
                     .collect(Collectors.toList());

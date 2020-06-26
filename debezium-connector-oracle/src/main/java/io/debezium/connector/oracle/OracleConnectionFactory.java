@@ -5,14 +5,14 @@
  */
 package io.debezium.connector.oracle;
 
-import io.debezium.jdbc.JdbcConfiguration;
-import io.debezium.jdbc.JdbcConnection.ConnectionFactory;
-
+// import static io.debezium.connector.oracle.OracleConnectorConfig.CONNECTOR_ADAPTER;
+// import static io.debezium.connector.oracle.OracleConnectorConfig.CONNECTOR_ADAPTER;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 
-import static io.debezium.connector.oracle.OracleConnectorConfig.CONNECTOR_ADAPTER;
+import io.debezium.jdbc.JdbcConfiguration;
+import io.debezium.jdbc.JdbcConnection.ConnectionFactory;
 
 public class OracleConnectionFactory implements ConnectionFactory {
 
@@ -27,14 +27,13 @@ public class OracleConnectionFactory implements ConnectionFactory {
 
         OracleConnectorConfig oracleConnectorConfig = new OracleConnectorConfig(config);
         String adapterString = config.getString("connection.adapter");
-        adapterString =  adapterString == null ?  config.getString(OracleConnectorConfig.CONNECTOR_ADAPTER) : adapterString;
+        adapterString = adapterString == null ? config.getString(OracleConnectorConfig.CONNECTOR_ADAPTER) : adapterString;
         OracleConnectorConfig.ConnectorAdapter adapter = OracleConnectorConfig.ConnectorAdapter.parse(adapterString);
         if (adapter == OracleConnectorConfig.ConnectorAdapter.LOG_MINER) {
             driverType = "thin";
         }
 
         return DriverManager.getConnection(
-              "jdbc:oracle:" + driverType + ":@" + hostName + ":" + port + "/" + database, user, password
-        );
+                "jdbc:oracle:oci:@" + hostName + ":" + port + "/" + database, user, password);
     }
 }

@@ -5,16 +5,15 @@
  */
 package io.debezium.connector.cassandra.transforms.type.deserializer;
 
-import io.debezium.connector.cassandra.transforms.CassandraTypeDeserializer;
-import io.debezium.connector.cassandra.transforms.CassandraTypeToAvroSchemaMapper;
-import org.apache.avro.Schema;
-import org.apache.avro.SchemaBuilder;
-import org.apache.avro.generic.GenericRecordBuilder;
-import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.TupleType;
-
 import java.nio.ByteBuffer;
 import java.util.List;
+
+import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.TupleType;
+import org.apache.kafka.connect.data.SchemaBuilder;
+import org.apache.kafka.connect.data.Struct;
+
+import io.debezium.connector.cassandra.transforms.CassandraTypeDeserializer;
 
 public class TupleTypeDeserializer extends TypeDeserializer {
 
@@ -28,36 +27,33 @@ public class TupleTypeDeserializer extends TypeDeserializer {
         List<AbstractType<?>> innerTypes = tupleType.allTypes();
         ByteBuffer[] innerValueByteBuffers = tupleType.split(bb);
 
-        GenericRecordBuilder builder = new GenericRecordBuilder(getSchema(abstractType));
+        Struct struct = new Struct(getSchemaBuilder(abstractType).build());
 
         for (int i = 0; i < innerTypes.size(); i++) {
             AbstractType<?> currentInnerType = innerTypes.get(i);
             String fieldName = createFieldNameForIndex(i);
-            Object deserializedInnerObject =
-                    CassandraTypeDeserializer.deserialize(currentInnerType, innerValueByteBuffers[i]);
-            builder.set(fieldName, deserializedInnerObject);
+            Object deserializedInnerObject = CassandraTypeDeserializer.deserialize(currentInnerType, innerValueByteBuffers[i]);
+            struct.put(fieldName, deserializedInnerObject);
         }
 
-        return builder.build();
+        return struct;
     }
 
     @Override
-    public Schema getSchema(AbstractType<?> abstractType) {
+    public SchemaBuilder getSchemaBuilder(AbstractType<?> abstractType) {
         TupleType tupleType = (TupleType) abstractType;
         List<AbstractType<?>> tupleInnerTypes = tupleType.allTypes();
 
         String recordName = createTupleName(tupleInnerTypes);
 
-        SchemaBuilder.FieldAssembler<Schema> schemaBuilder = SchemaBuilder.record(recordName).fields();
+        SchemaBuilder schemaBuilder = SchemaBuilder.struct().name(recordName);
 
         for (int i = 0; i < tupleInnerTypes.size(); i++) {
             AbstractType<?> innerType = tupleInnerTypes.get(i);
-            schemaBuilder.name(createFieldNameForIndex(i))
-                         .type(CassandraTypeToAvroSchemaMapper.getSchema(innerType, false))
-                         .noDefault();
+            schemaBuilder.field(createFieldNameForIndex(i), CassandraTypeDeserializer.getSchemaBuilder(innerType).build());
         }
 
-        return schemaBuilder.endRecord();
+        return schemaBuilder;
     }
 
     private String createTupleName(List<AbstractType<?>> innerTypes) {

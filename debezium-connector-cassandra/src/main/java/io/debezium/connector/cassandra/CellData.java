@@ -5,22 +5,24 @@
  */
 package io.debezium.connector.cassandra;
 
-import com.datastax.driver.core.ColumnMetadata;
-import io.debezium.connector.cassandra.transforms.CassandraTypeConverter;
-import io.debezium.connector.cassandra.transforms.CassandraTypeToAvroSchemaMapper;
-import org.apache.avro.Schema;
-import org.apache.avro.SchemaBuilder;
-import org.apache.avro.generic.GenericRecord;
-import org.apache.avro.generic.GenericRecordBuilder;
-import org.apache.cassandra.db.marshal.AbstractType;
-
 import java.util.Objects;
+
+import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.kafka.connect.data.Field;
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.SchemaBuilder;
+import org.apache.kafka.connect.data.Struct;
+
+import com.datastax.driver.core.ColumnMetadata;
+
+import io.debezium.connector.cassandra.transforms.CassandraTypeConverter;
+import io.debezium.connector.cassandra.transforms.CassandraTypeDeserializer;
 
 /**
  * Cell-level data about the source event. Each cell contains the name, value and
  * type of a column in a Cassandra table.
  */
-public class CellData implements AvroRecord {
+public class CellData implements KafkaRecord {
     /**
      * The type of a column in a Cassandra table
      */
@@ -64,24 +66,49 @@ public class CellData implements AvroRecord {
     }
 
     @Override
-    public GenericRecord record(Schema schema) {
-        return new GenericRecordBuilder(schema)
-                .set(CELL_VALUE_KEY, value)
-                .set(CELL_DELETION_TS_KEY, deletionTs)
-                .set(CELL_SET_KEY, true)
-                .build();
+    public Struct record(Schema schema) {
+        Struct cellStruct = new Struct(schema)
+                .put(CELL_DELETION_TS_KEY, deletionTs)
+                .put(CELL_SET_KEY, true);
+
+        if (value instanceof Struct) {
+            Schema valueSchema = schema.field(CELL_VALUE_KEY).schema();
+            Struct clonedValue = cloneValue(valueSchema, (Struct) value);
+            cellStruct.put(CELL_VALUE_KEY, clonedValue);
+        }
+        else {
+            cellStruct.put(CELL_VALUE_KEY, value);
+        }
+
+        return cellStruct;
     }
 
-    static Schema cellSchema(ColumnMetadata cm) {
+    // Encountered DataException("Struct schemas do not match.") when value is a Struct.
+    // The error is because the valueSchema is optional, but the schema of value formed during deserialization is not.
+    // This is a temporary workaround to fix this problem.
+    private Struct cloneValue(Schema valueSchema, Struct value) {
+        Struct clonedValue = new Struct(valueSchema);
+        for (Field field : valueSchema.fields()) {
+            String fieldName = field.name();
+            clonedValue.put(fieldName, value.get(fieldName));
+        }
+        return clonedValue;
+    }
+
+    static Schema cellSchema(ColumnMetadata cm, boolean optional) {
         AbstractType<?> convertedType = CassandraTypeConverter.convert(cm.getType());
-        Schema valueSchema = CassandraTypeToAvroSchemaMapper.getSchema(convertedType, true);
+        Schema valueSchema = CassandraTypeDeserializer.getSchemaBuilder(convertedType).optional().build();
         if (valueSchema != null) {
-            return SchemaBuilder.builder().record(cm.getName()).fields()
-                    .name(CELL_VALUE_KEY).type(valueSchema).noDefault()
-                    .name(CELL_DELETION_TS_KEY).type(CassandraTypeToAvroSchemaMapper.nullable(CassandraTypeToAvroSchemaMapper.LONG_TYPE)).withDefault(null)
-                    .name(CELL_SET_KEY).type().booleanType().noDefault()
-                    .endRecord();
-        } else {
+            SchemaBuilder schemaBuilder = SchemaBuilder.struct().name(cm.getName())
+                    .field(CELL_VALUE_KEY, valueSchema)
+                    .field(CELL_DELETION_TS_KEY, Schema.OPTIONAL_INT64_SCHEMA)
+                    .field(CELL_SET_KEY, Schema.BOOLEAN_SCHEMA);
+            if (optional) {
+                schemaBuilder.optional();
+            }
+            return schemaBuilder.build();
+        }
+        else {
             return null;
         }
     }

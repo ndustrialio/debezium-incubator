@@ -5,21 +5,6 @@
  */
 package io.debezium.connector.cassandra;
 
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.health.HealthCheckRegistry;
-import com.codahale.metrics.jmx.JmxReporter;
-import com.codahale.metrics.servlets.HealthCheckServlet;
-import com.codahale.metrics.servlets.MetricsServlet;
-import com.codahale.metrics.servlets.PingServlet;
-import io.debezium.connector.cassandra.exceptions.CassandraConnectorConfigException;
-import io.debezium.connector.cassandra.network.BuildInfoServlet;
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.servlet.ServletContextHandler;
-import org.eclipse.jetty.servlet.ServletHolder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.yaml.snakeyaml.Yaml;
-
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.HashMap;
@@ -29,6 +14,23 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.servlet.ServletContextHandler;
+import org.eclipse.jetty.servlet.ServletHolder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.health.HealthCheckRegistry;
+import com.codahale.metrics.jmx.JmxReporter;
+import com.codahale.metrics.servlets.HealthCheckServlet;
+import com.codahale.metrics.servlets.MetricsServlet;
+import com.codahale.metrics.servlets.PingServlet;
+
+import io.debezium.config.Configuration;
+import io.debezium.connector.cassandra.exceptions.CassandraConnectorConfigException;
+import io.debezium.connector.cassandra.network.BuildInfoServlet;
 
 /**
  * A task that reads Cassandra commit log in CDC directory and generate corresponding data
@@ -54,8 +56,7 @@ public class CassandraConnectorTask {
 
         String configPath = args[0];
         try (FileInputStream fis = new FileInputStream(configPath)) {
-            Map<String, Object> props = new Yaml().load(fis);
-            CassandraConnectorConfig config = new CassandraConnectorConfig(props);
+            CassandraConnectorConfig config = new CassandraConnectorConfig(Configuration.load(fis));
             CassandraConnectorTask task = new CassandraConnectorTask(config);
             task.run();
         }
@@ -85,7 +86,8 @@ public class CassandraConnectorTask {
             while (processorGroup.isRunning()) {
                 Thread.sleep(1000);
             }
-        } finally {
+        }
+        finally {
             stopAll();
         }
     }
@@ -196,11 +198,13 @@ public class CassandraConnectorTask {
                     try {
                         processor.initialize();
                         processor.start();
-                    } catch (Exception e) {
+                    }
+                    catch (Exception e) {
                         LOGGER.error("Encountered exception while running {}; stopping all processors in {}", processor.getName(), getName(), e);
                         try {
                             stopProcessors();
-                        } catch (Exception e2) {
+                        }
+                        catch (Exception e2) {
                             LOGGER.error("Encountered exceptions while stopping all processors in {}", getName(), e2);
                         }
                     }

@@ -5,8 +5,8 @@
  */
 package io.debezium.connector.oracle.antlr.listener;
 
-import io.debezium.connector.oracle.logminer.valueholder.ColumnValueHolder;
 import io.debezium.connector.oracle.antlr.OracleDmlParser;
+import io.debezium.connector.oracle.logminer.valueholder.ColumnValueHolder;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
 import io.debezium.relational.Column;
 
@@ -28,10 +28,10 @@ abstract class BaseDmlStringParserListener extends BaseDmlParserListener<String>
      * todo better job in parsing of == and null, isnull
      * @param logicalExpression expression tree
      */
-    void parseRecursively(PlSqlParser.Logical_expressionContext logicalExpression)  {
+    void parseRecursively(PlSqlParser.Logical_expressionContext logicalExpression) {
 
         int count = logicalExpression.logical_expression().size();
-        if (count == 0){
+        if (count == 0) {
 
             String nullValue = logicalExpression.getStop().getText();
 
@@ -54,14 +54,14 @@ abstract class BaseDmlStringParserListener extends BaseDmlParserListener<String>
             value = removeApostrophes(value);
 
             ColumnValueHolder columnValueHolder = oldColumnValues.get(columnName);
-            if (columnValueHolder != null) { //todo this used to happen for ROWID pseudo column. Test if this is not a problem after NO_ROWID_IN_STMT option
+            if (columnValueHolder != null) { // todo this used to happen for ROWID pseudo column. Test if this is not a problem after NO_ROWID_IN_STMT option
                 Object valueObject = convertValueToSchemaType(column, value, converter);
                 columnValueHolder.setProcessed(true);
                 columnValueHolder.getColumnValue().setColumnData(valueObject);
             }
 
         }
-        for (int i = 0; i<count; i++) {
+        for (int i = 0; i < count; i++) {
             parseRecursively(logicalExpression.logical_expression(i));
         }
     }

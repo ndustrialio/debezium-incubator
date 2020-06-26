@@ -24,7 +24,9 @@ public abstract class BaseChangeRecordEmitter<T> extends RelationalChangeRecordE
     }
 
     abstract protected Operation getOperation();
+
     abstract protected String getColumnName(T columnValue);
+
     abstract protected Object getColumnData(T columnValue);
 
     protected Object[] getColumnValues(T[] columnValues) {

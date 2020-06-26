@@ -5,6 +5,11 @@
  */
 package io.debezium.connector.oracle;
 
+import java.util.Set;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import io.debezium.connector.oracle.antlr.OracleDdlParser;
 import io.debezium.pipeline.spi.SchemaChangeEventEmitter;
 import io.debezium.relational.Table;
@@ -12,19 +17,17 @@ import io.debezium.relational.TableId;
 import io.debezium.relational.Tables;
 import io.debezium.schema.SchemaChangeEvent;
 import io.debezium.schema.SchemaChangeEvent.SchemaChangeEventType;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.util.Set;
+import oracle.streams.DDLLCR;
 
 /**
  * {@link SchemaChangeEventEmitter} implementation based on Oracle.
  *
  * @author Gunnar Morling
  */
-public class BaseOracleSchemaChangeEventEmitter implements SchemaChangeEventEmitter {
+public class OracleSchemaChangeEventEmitter implements SchemaChangeEventEmitter {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(BaseOracleSchemaChangeEventEmitter.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(OracleSchemaChangeEventEmitter.class);
 
     private final OracleOffsetContext offsetContext;
     private final TableId tableId;
@@ -32,16 +35,12 @@ public class BaseOracleSchemaChangeEventEmitter implements SchemaChangeEventEmit
     private String objectOwner;
     private String ddlText;
     private String commandType;
+    private final DDLLCR ddlLcr;
 
-    public BaseOracleSchemaChangeEventEmitter(OracleOffsetContext offsetContext, TableId tableId,
-                                              String sourceDatabaseName, String objectOwner, String ddlText,
-                                              String commandType) {
+    public OracleSchemaChangeEventEmitter(OracleOffsetContext offsetContext, TableId tableId, DDLLCR ddlLcr) {
         this.offsetContext = offsetContext;
         this.tableId = tableId;
-        this.sourceDatabaseName = sourceDatabaseName;
-        this.objectOwner = objectOwner;
-        this.ddlText = ddlText;
-        this.commandType = commandType;
+        this.ddlLcr = ddlLcr;
     }
 
     @Override
@@ -65,12 +64,20 @@ public class BaseOracleSchemaChangeEventEmitter implements SchemaChangeEventEmit
 
         Table table = tables.forTable(tableId);
 
-        receiver.schemaChangeEvent(new SchemaChangeEvent(offsetContext.getPartition(), offsetContext.getOffset(),
-                sourceDatabaseName, objectOwner, ddlText, table, eventType, false));
+        receiver.schemaChangeEvent(new SchemaChangeEvent(
+                offsetContext.getPartition(),
+                offsetContext.getOffset(),
+                offsetContext.getSourceInfo(),
+                ddlLcr.getSourceDatabaseName(),
+                ddlLcr.getObjectOwner(),
+                ddlLcr.getDDLText(),
+                table,
+                eventType,
+                false));
     }
 
     private SchemaChangeEventType getSchemaChangeEventType() {
-        switch(commandType) {
+        switch (ddlLcr.getCommandType()) {
             case "CREATE TABLE":
                 return SchemaChangeEventType.CREATE;
             case "ALTER TABLE":

@@ -5,9 +5,7 @@
  */
 package io.debezium.connector.cassandra;
 
-import org.apache.cassandra.config.DatabaseDescriptor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static java.nio.file.StandardWatchEventKinds.ENTRY_CREATE;
 
 import java.io.File;
 import java.io.IOException;
@@ -16,8 +14,12 @@ import java.nio.file.WatchEvent;
 import java.util.Arrays;
 import java.util.Collections;
 
-import static java.nio.file.StandardWatchEventKinds.ENTRY_CREATE;
+import org.apache.cassandra.config.DatabaseDescriptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.cassandra.exceptions.CassandraConnectorTaskException;
 
 /**
  * The {@link CommitLogProcessor} is used to process CommitLog in CDC directory.
@@ -34,7 +36,7 @@ public class CommitLogProcessor extends AbstractProcessor {
     private final CommitLogReadHandlerImpl commitLogReadHandler;
     private final File cdcDir;
     private final AbstractDirectoryWatcher watcher;
-    private final BlockingEventQueue<Event> queue;
+    private final ChangeEventQueue<Event> queue;
     private final boolean latestOnly;
     private final CommitLogProcessorMetrics metrics = new CommitLogProcessorMetrics();
     private boolean initial = true;
@@ -47,7 +49,9 @@ public class CommitLogProcessor extends AbstractProcessor {
                 context.getSchemaHolder(),
                 context.getQueue(),
                 context.getOffsetWriter(),
-                new RecordMaker(context.getCassandraConnectorConfig().tombstonesOnDelete(), new Filters(context.getCassandraConnectorConfig().fieldBlacklist())),
+                new RecordMaker(context.getCassandraConnectorConfig().tombstonesOnDelete(),
+                        new Filters(context.getCassandraConnectorConfig().fieldBlacklist()),
+                        context.getCassandraConnectorConfig()),
                 metrics);
         cdcDir = new File(DatabaseDescriptor.getCDCLogLocation());
         watcher = new AbstractDirectoryWatcher(cdcDir.toPath(), context.getCassandraConnectorConfig().cdcDirPollIntervalMs(), Collections.singleton(ENTRY_CREATE)) {
@@ -73,6 +77,7 @@ public class CommitLogProcessor extends AbstractProcessor {
 
     @Override
     public void process() throws IOException, InterruptedException {
+        LOGGER.debug("Processing commitLogFiles while initial is {}", initial);
         if (latestOnly) {
             processLastModifiedCommitLog();
             throw new InterruptedException();
@@ -101,14 +106,25 @@ public class CommitLogProcessor extends AbstractProcessor {
             throw new IOException("Commit log " + file.getName() + " does not exist");
         }
         try {
-            LOGGER.info("Processing commit log {}", file.getName());
-            metrics.setCommitLogFilename(file.getName());
-            commitLogReader.readCommitLogSegment(commitLogReadHandler, file, false);
-            queue.enqueue(new EOFEvent(file, true));
-            LOGGER.info("Successfully processed commit log {}", file.getName());
-        } catch (IOException e) {
-            queue.enqueue(new EOFEvent(file, false));
-            LOGGER.warn("Error occurred while processing commit log " + file.getName(), e);
+            try {
+                LOGGER.info("Processing commit log {}", file.getName());
+                metrics.setCommitLogFilename(file.getName());
+                commitLogReader.readCommitLogSegment(commitLogReadHandler, file, false);
+                if (!latestOnly) {
+                    queue.enqueue(new EOFEvent(file, true));
+                }
+                LOGGER.info("Successfully processed commit log {}", file.getName());
+            }
+            catch (IOException e) {
+                if (!latestOnly) {
+                    queue.enqueue(new EOFEvent(file, false));
+                }
+                LOGGER.warn("Error occurred while processing commit log " + file.getName(), e);
+            }
+        }
+        catch (InterruptedException e) {
+            LOGGER.error("Interruption while enqueuing EOF Event for file {}", file.getName());
+            throw new CassandraConnectorTaskException("Enqueuing has been interrupted: ", e);
         }
     }
 
@@ -128,7 +144,8 @@ public class CommitLogProcessor extends AbstractProcessor {
 
         if (lastModified != null) {
             processCommitLog(lastModified);
-        } else {
+        }
+        else {
             LOGGER.info("No commit logs found in {}", DatabaseDescriptor.getCommitLogLocation());
         }
     }

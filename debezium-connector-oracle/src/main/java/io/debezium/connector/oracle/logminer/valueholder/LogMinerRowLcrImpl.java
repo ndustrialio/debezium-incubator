@@ -5,12 +5,12 @@
  */
 package io.debezium.connector.oracle.logminer.valueholder;
 
-import io.debezium.data.Envelope;
-
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.Objects;
+
+import io.debezium.data.Envelope;
 
 /**
  * This class mimics the API of oracle.streams.DefaultRowLCR class (LCR stands for logical change record)
@@ -111,8 +111,12 @@ public class LogMinerRowLcrImpl implements LogMinerRowLcr {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         LogMinerRowLcrImpl that = (LogMinerRowLcrImpl) o;
         return commandType == that.commandType &&
                 Objects.equals(newLmColumnValues, that.newLmColumnValues) &&
@@ -139,4 +143,3 @@ public class LogMinerRowLcrImpl implements LogMinerRowLcr {
                 '}';
     }
 }
-

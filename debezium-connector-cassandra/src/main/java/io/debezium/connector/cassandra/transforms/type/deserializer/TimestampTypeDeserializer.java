@@ -5,12 +5,13 @@
  */
 package io.debezium.connector.cassandra.transforms.type.deserializer;
 
-import io.debezium.connector.cassandra.transforms.CassandraTypeToAvroSchemaMapper;
-import org.apache.avro.Schema;
-import org.apache.cassandra.db.marshal.AbstractType;
-
 import java.nio.ByteBuffer;
 import java.util.Date;
+
+import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.kafka.connect.data.SchemaBuilder;
+
+import io.debezium.connector.cassandra.transforms.CassandraTypeKafkaSchemaBuilders;
 
 public class TimestampTypeDeserializer extends TypeDeserializer {
 
@@ -22,7 +23,7 @@ public class TimestampTypeDeserializer extends TypeDeserializer {
     }
 
     @Override
-    public Schema getSchema(AbstractType<?> abstractType) {
-        return CassandraTypeToAvroSchemaMapper.TIMESTAMP_MILLI_TYPE;
+    public SchemaBuilder getSchemaBuilder(AbstractType<?> abstractType) {
+        return CassandraTypeKafkaSchemaBuilders.TIMESTAMP_MILLI_TYPE;
     }
 }

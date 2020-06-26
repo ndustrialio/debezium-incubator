@@ -5,12 +5,22 @@
  */
 package io.debezium.connector.cassandra.transforms;
 
-import com.datastax.driver.core.DataType;
-import org.apache.avro.Schema;
-import org.apache.avro.SchemaBuilder;
-import org.apache.avro.generic.GenericData;
-import org.apache.avro.generic.GenericRecord;
-import org.apache.avro.generic.GenericRecordBuilder;
+import java.math.BigDecimal;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
 import org.apache.cassandra.cql3.Duration;
 import org.apache.cassandra.cql3.FieldIdentifier;
 import org.apache.cassandra.cql3.QueryOptions;
@@ -30,6 +40,7 @@ import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.marshal.ListType;
 import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.db.marshal.MapType;
+import org.apache.cassandra.db.marshal.ReversedType;
 import org.apache.cassandra.db.marshal.SetType;
 import org.apache.cassandra.db.marshal.ShortType;
 import org.apache.cassandra.db.marshal.SimpleDateType;
@@ -40,23 +51,15 @@ import org.apache.cassandra.db.marshal.TupleType;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.marshal.UUIDType;
 import org.apache.cassandra.db.marshal.UserType;
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.Struct;
+import org.apache.kafka.connect.data.Values;
 import org.junit.Assert;
 import org.junit.Test;
 
-import java.math.BigDecimal;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import com.datastax.driver.core.DataType;
+
+import io.debezium.doc.FixFor;
 
 /**
  * This class ONLY tests the {@link CassandraTypeDeserializer#deserialize(AbstractType, ByteBuffer)}
@@ -150,17 +153,13 @@ public class CassandraTypeDeserializerTest {
     public void testDurationType() {
         Duration sourceDuration = Duration.newInstance(1, 3, 500);
 
-        GenericData.Record expectedDurationRecord =
-                new GenericRecordBuilder(CassandraTypeToAvroSchemaMapper.DURATION_TYPE).set("months", sourceDuration.getMonths())
-                                                       .set("days", sourceDuration.getDays())
-                                                       .set("nanos", sourceDuration.getNanoseconds())
-                                                       .build();
+        long expectedNanoDuration = (30 + 3) * ChronoUnit.DAYS.getDuration().toNanos() + 500;
 
         ByteBuffer serializedDuration = DurationType.instance.decompose(sourceDuration);
 
         Object deserializedDuration = CassandraTypeDeserializer.deserialize(DurationType.instance, serializedDuration);
 
-        Assert.assertEquals(expectedDurationRecord, deserializedDuration);
+        Assert.assertEquals(expectedNanoDuration, deserializedDuration);
     }
 
     @Test
@@ -178,7 +177,7 @@ public class CassandraTypeDeserializerTest {
     public void testInetAddressType() throws UnknownHostException {
         InetAddress sourceInetAddress = InetAddress.getLocalHost();
         // the address is the only thing that cassandra will seralize for an inetadress.
-        String expectedInetAddress =  "/" + sourceInetAddress.getHostAddress();
+        String expectedInetAddress = "/" + sourceInetAddress.getHostAddress();
 
         ByteBuffer serializedInetAddress = InetAddressType.instance.decompose(sourceInetAddress);
 
@@ -258,9 +257,9 @@ public class CassandraTypeDeserializerTest {
         ByteBuffer serializedMap = mapType.decompose(sourceMap);
         Object deserializedMap = CassandraTypeDeserializer.deserialize(mapType, serializedMap);
 
-        Map<String, Float> expectedMap = new HashMap<>();
-        expectedMap.put("1", 1.5F);
-        expectedMap.put("2", 3.1414F);
+        Map<Integer, Float> expectedMap = new HashMap<>();
+        expectedMap.put(1, 1.5F);
+        expectedMap.put(2, 3.1414F);
 
         Assert.assertEquals(expectedMap, deserializedMap);
     }
@@ -274,7 +273,7 @@ public class CassandraTypeDeserializerTest {
         // non-frozen
         SetType<Float> nonFrozenSetType = SetType.getInstance(FloatType.instance, true);
         ByteBuffer serializedSet = nonFrozenSetType.decompose(sourceSet);
-        Collection<?> deserializedSet = (Collection) CassandraTypeDeserializer.deserialize(nonFrozenSetType, serializedSet);
+        Collection<?> deserializedSet = (Collection<?>) CassandraTypeDeserializer.deserialize(nonFrozenSetType, serializedSet);
         // order may be different in the resulting collection.
         Assert.assertTrue(sourceSet.containsAll(deserializedSet));
         Assert.assertTrue(deserializedSet.containsAll(sourceSet));
@@ -282,7 +281,7 @@ public class CassandraTypeDeserializerTest {
         // frozen
         SetType<Float> frozenSetType = SetType.getInstance(FloatType.instance, false);
         serializedSet = frozenSetType.decompose(sourceSet);
-        deserializedSet = (Collection) CassandraTypeDeserializer.deserialize(frozenSetType, serializedSet);
+        deserializedSet = (Collection<?>) CassandraTypeDeserializer.deserialize(frozenSetType, serializedSet);
         Assert.assertTrue(sourceSet.containsAll(deserializedSet));
         Assert.assertTrue(deserializedSet.containsAll(sourceSet));
     }
@@ -335,7 +334,7 @@ public class CassandraTypeDeserializerTest {
     @Test
     public void testTimeUUIDType() {
         UUID timeUUID = UUID.randomUUID();
-        GenericData.Fixed expectedFixedUUID = new GenericData.Fixed(CassandraTypeToAvroSchemaMapper.UUID_TYPE, UuidUtil.asBytes(timeUUID));
+        String expectedFixedUUID = Values.convertToString(CassandraTypeKafkaSchemaBuilders.UUID_TYPE, UuidUtil.asBytes(timeUUID));
 
         ByteBuffer serializedTimeUUID = TimeUUIDType.instance.decompose(timeUUID);
 
@@ -355,11 +354,10 @@ public class CassandraTypeDeserializerTest {
         ByteBuffer serializedTuple = tupleType.fromString(sourceTupleString);
 
         Object deserializedTuple = CassandraTypeDeserializer.deserialize(tupleType, serializedTuple);
-
-        Schema expectedSchema = SchemaBuilder.record("AsciiShortTuple").fields().requiredString("field1").requiredInt("field2").endRecord();
-        GenericRecord expectedTuple = new GenericRecordBuilder(expectedSchema).set("field1", "foo")
-                                                                              .set("field2", (short) 1)
-                                                                              .build();
+        Schema tupleSchema = CassandraTypeDeserializer.getSchemaBuilder(tupleType).build();
+        Struct expectedTuple = new Struct(tupleSchema)
+                .put("field1", "foo")
+                .put("field2", (short) 1);
 
         Assert.assertEquals(expectedTuple, deserializedTuple);
     }
@@ -384,28 +382,14 @@ public class CassandraTypeDeserializerTest {
                 expectedFieldTypes,
                 true);
 
-        Schema expectedUserTypeSchema = SchemaBuilder.record("FooType")
-                                                     .namespace("barspace")
-                                                     .fields()
-                                                     .requiredString("asciiField")
-                                                     .requiredDouble("doubleField")
-                                                     .name("durationField").type(CassandraTypeToAvroSchemaMapper.DURATION_TYPE).noDefault()
-                                                     .endRecord();
+        Schema userSchema = CassandraTypeDeserializer.getSchemaBuilder(userType).build();
 
-        Assert.assertEquals(expectedUserTypeSchema, CassandraTypeDeserializer.getSchema(userType));
+        long expectedNanoDuration = (30 + 2) * ChronoUnit.DAYS.getDuration().toNanos() + 3;
 
-        // then, test for data correctness
-        GenericData.Record expectedDuration =
-                new GenericRecordBuilder(CassandraTypeToAvroSchemaMapper.DURATION_TYPE).set("months", 1)
-                                                       .set("days", 2)
-                                                       .set("nanos", 3L)
-                                                       .build();
-
-        GenericData.Record expectedUserTypeData =
-                new GenericRecordBuilder(expectedUserTypeSchema).set("asciiField", "foobar")
-                                                                .set("doubleField", 1.5d)
-                                                                .set("durationField", expectedDuration)
-                                                                .build();
+        Struct expectedUserTypeData = new Struct(userSchema)
+                .put("asciiField", "foobar")
+                .put("doubleField", 1.5d)
+                .put("durationField", expectedNanoDuration);
 
         Map<String, Object> jsonObject = new HashMap<>(3);
         jsonObject.put("\"asciiField\"", "foobar");
@@ -436,12 +420,27 @@ public class CassandraTypeDeserializerTest {
     @Test
     public void testUUIDType() {
         UUID uuid = UUID.randomUUID();
-        GenericData.Fixed expectedFixedUUID = new GenericData.Fixed(CassandraTypeToAvroSchemaMapper.UUID_TYPE, UuidUtil.asBytes(uuid));
+        String expectedFixedUUID = Values.convertToString(CassandraTypeKafkaSchemaBuilders.UUID_TYPE, UuidUtil.asBytes(uuid));
 
         ByteBuffer serializedUUID = UUIDType.instance.decompose(uuid);
 
         Object deserializedUUID = CassandraTypeDeserializer.deserialize(UUIDType.instance, serializedUUID);
 
         Assert.assertEquals(expectedFixedUUID, deserializedUUID);
+    }
+
+    @Test
+    @FixFor("DBZ-1967")
+    public void testReversedType() {
+        Date timestamp = new Date();
+        Long expectedLongTimestamp = timestamp.getTime();
+
+        ByteBuffer serializedTimestamp = TimestampType.instance.decompose(timestamp);
+
+        ReversedType<?> reversedTimeStampType = ReversedType.getInstance(TimestampType.instance);
+
+        Object deserializedTimestamp = CassandraTypeDeserializer.deserialize(reversedTimeStampType, serializedTimestamp);
+
+        Assert.assertEquals(expectedLongTimestamp, deserializedTimestamp);
     }
 }

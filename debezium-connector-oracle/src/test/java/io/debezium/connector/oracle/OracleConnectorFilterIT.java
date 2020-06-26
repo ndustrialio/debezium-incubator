@@ -70,10 +70,11 @@ public class OracleConnectorFilterIT extends AbstractConnectorTest {
                 "GRANT CREATE SEQUENCE TO debezium2",
                 "ALTER USER debezium2 QUOTA 100M ON users",
                 "create table debezium2.table2 (id numeric(9,0) not null,name varchar2(1000),primary key (id))",
+                "create table debezium2.nopk (id numeric(9,0) not null)",
                 "GRANT ALL PRIVILEGES ON debezium2.table2 to debezium",
                 "GRANT SELECT ON debezium2.table2 to " + TestHelper.CONNECTOR_USER,
-                "ALTER TABLE debezium2.table2 ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS"
-            );
+                "GRANT SELECT ON debezium2.nopk to " + TestHelper.CONNECTOR_USER,
+                "ALTER TABLE debezium2.table2 ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS");
         String ddl = "create table debezium.table1 (" +
                 "  id numeric(9,0) not null, " +
                 "  name varchar2(1000), " +
@@ -103,14 +104,14 @@ public class OracleConnectorFilterIT extends AbstractConnectorTest {
         Configuration config = TestHelper.defaultConfig()
                 .with(
                         RelationalDatabaseConnectorConfig.TABLE_WHITELIST,
-                        "ORCLPDB1\\.DEBEZIUM2\\.TABLE2,ORCLPDB1\\.DEBEZIUM\\.TABLE1,ORCLPDB1\\.DEBEZIUM\\.TABLE3")
+                        "DEBEZIUM2\\.TABLE2,DEBEZIUM\\.TABLE1,DEBEZIUM\\.TABLE3")
                 .with(OracleConnectorConfig.SNAPSHOT_MODE, SnapshotMode.INITIAL_SCHEMA_ONLY)
                 .build();
 
         start(OracleConnector.class, config);
         assertConnectorIsRunning();
 
-        Thread.sleep(1000);
+        waitForSnapshotToBeCompleted(TestHelper.CONNECTOR_NAME, TestHelper.SERVER_NAME);
 
         connection.execute("INSERT INTO debezium.table1 VALUES (1, 'Text-1')");
         connection.execute("INSERT INTO debezium.table2 VALUES (2, 'Text-2')");
@@ -155,14 +156,14 @@ public class OracleConnectorFilterIT extends AbstractConnectorTest {
         Configuration config = TestHelper.defaultConfig()
                 .with(
                         RelationalDatabaseConnectorConfig.TABLE_BLACKLIST,
-                        "ORCLPDB1\\.DEBEZIUM\\.TABLE2,ORCLPDB1\\.DEBEZIUM\\.CUSTOMER.*")
+                        "DEBEZIUM\\.TABLE2,DEBEZIUM\\.CUSTOMER.*")
                 .with(OracleConnectorConfig.SNAPSHOT_MODE, SnapshotMode.INITIAL_SCHEMA_ONLY)
                 .build();
 
         start(OracleConnector.class, config);
         assertConnectorIsRunning();
 
-        Thread.sleep(1000);
+        waitForSnapshotToBeCompleted(TestHelper.CONNECTOR_NAME, TestHelper.SERVER_NAME);
 
         connection.execute("INSERT INTO debezium.table1 VALUES (1, 'Text-1')");
         connection.execute("INSERT INTO debezium.table2 VALUES (2, 'Text-2')");

@@ -5,31 +5,7 @@
  */
 package io.debezium.connector.oracle.logminer;
 
-import io.debezium.data.SpecialValueDecimal;
-import io.debezium.data.VariableScaleDecimal;
-import io.debezium.jdbc.JdbcConnection;
-import io.debezium.jdbc.JdbcValueConverters;
-import io.debezium.relational.Column;
-import io.debezium.relational.ValueConverter;
-import io.debezium.time.Date;
-import io.debezium.time.MicroDuration;
-import io.debezium.time.ZonedTimestamp;
-import io.debezium.util.NumberConversions;
-import io.debezium.util.Strings;
-import oracle.jdbc.OracleTypes;
-import oracle.sql.BINARY_DOUBLE;
-import oracle.sql.BINARY_FLOAT;
-import oracle.sql.BLOB;
-import oracle.sql.CHAR;
-import oracle.sql.DATE;
-import oracle.sql.INTERVALDS;
-import oracle.sql.INTERVALYM;
-import oracle.sql.NUMBER;
-import oracle.sql.TIMESTAMP;
-import oracle.sql.TIMESTAMPLTZ;
-import oracle.sql.TIMESTAMPTZ;
-import org.apache.kafka.connect.data.Field;
-import org.apache.kafka.connect.data.SchemaBuilder;
+import static io.debezium.util.NumberConversions.BYTE_FALSE;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
@@ -43,7 +19,32 @@ import java.time.temporal.ChronoField;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static io.debezium.util.NumberConversions.BYTE_FALSE;
+import org.apache.kafka.connect.data.Field;
+import org.apache.kafka.connect.data.SchemaBuilder;
+
+import io.debezium.data.SpecialValueDecimal;
+import io.debezium.data.VariableScaleDecimal;
+import io.debezium.jdbc.JdbcConnection;
+import io.debezium.jdbc.JdbcValueConverters;
+import io.debezium.relational.Column;
+import io.debezium.relational.ValueConverter;
+import io.debezium.time.Date;
+import io.debezium.time.MicroDuration;
+import io.debezium.time.ZonedTimestamp;
+import io.debezium.util.NumberConversions;
+import io.debezium.util.Strings;
+
+import oracle.jdbc.OracleTypes;
+import oracle.sql.BINARY_DOUBLE;
+import oracle.sql.BINARY_FLOAT;
+import oracle.sql.CHAR;
+import oracle.sql.DATE;
+import oracle.sql.INTERVALDS;
+import oracle.sql.INTERVALYM;
+import oracle.sql.NUMBER;
+import oracle.sql.TIMESTAMP;
+import oracle.sql.TIMESTAMPLTZ;
+import oracle.sql.TIMESTAMPTZ;
 
 /**
  * This class is used as a value converter by the DML parser.
@@ -85,7 +86,7 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
 
     @Override
     public SchemaBuilder schemaBuilder(Column column) {
-        if (column == null) { //todo: we will address it if happens
+        if (column == null) { // todo: we will address it if happens
             logger.warn("Column is null, investigate");
             return null;
         }
@@ -94,21 +95,20 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
                 column.jdbcType(),
                 column.typeName(),
                 column.length(),
-                column.scale()
-        );
+                column.scale());
 
         switch (column.jdbcType()) {
             // Oracle's float is not float as in Java but a NUMERIC without scale
-           // case Types.FLOAT:
-           //     return VariableScaleDecimal.builder();
+            // case Types.FLOAT:
+            // return VariableScaleDecimal.builder();
             case Types.NUMERIC:
                 return getNumericSchema(column);
             case OracleTypes.BINARY_FLOAT:
                 return SchemaBuilder.float32();
             case OracleTypes.BINARY_DOUBLE:
                 return SchemaBuilder.float64();
-          //  case OracleTypes.TIMESTAMP:
-           //     return io.debezium.time.Timestamp.builder();
+            // case OracleTypes.TIMESTAMP:
+            // return io.debezium.time.Timestamp.builder();
             case OracleTypes.TIMESTAMPTZ:
             case OracleTypes.TIMESTAMPLTZ:
                 return ZonedTimestamp.builder();
@@ -116,7 +116,7 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
             case OracleTypes.INTERVALDS:
                 return MicroDuration.builder();
             case OracleTypes.STRUCT:
-                 return SchemaBuilder.string();
+                return SchemaBuilder.string();
             case Types.CLOB:
                 return SchemaBuilder.string();
             case Types.BLOB:
@@ -133,7 +133,7 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
 
             // a negative scale means rounding, e.g. NUMBER(10, -2) would be rounded to hundreds
             if (scale <= 0) {
-                //Boolean represtented as Number(1,0)
+                // Boolean represtented as Number(1,0)
                 if (scale == 0 && column.length() == 1) {
                     return SchemaBuilder.bool();
                 }
@@ -177,11 +177,11 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
             case OracleTypes.BINARY_DOUBLE:
                 return data -> convertDouble(column, fieldDefn, data);
             case Types.NUMERIC:
-                    return getNumericConverter(column, fieldDefn);
+                return getNumericConverter(column, fieldDefn);
             case Types.FLOAT:
                 return data -> getFloatConverter(column, fieldDefn, data);
             case OracleTypes.TIMESTAMP:
-                  return data -> convertToLocalDateTime(column, fieldDefn, data);
+                return data -> convertToLocalDateTime(column, fieldDefn, data);
             case OracleTypes.TIMESTAMPTZ:
             case OracleTypes.TIMESTAMPLTZ:
                 return (data) -> convertTimestampWithZone(column, fieldDefn, data);
@@ -213,7 +213,7 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
             if (valueString.toLowerCase().startsWith("to_timestamp")) {
                 dateText = valueString.substring("to_timestamp".length() + 2, valueString.length() - 2);
                 LocalDateTime dateTime = LocalDateTime.from(TIMESTAMP_FORMATTER.parse(dateText.trim()));
-                return  dateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() * 1000; //timestamp(6) is converted as microTimestamp
+                return dateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() * 1000; // timestamp(6) is converted as microTimestamp
             }
         }
         return value;
@@ -224,7 +224,7 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
             Integer scale = column.scale().get();
 
             if (scale <= 0) {
-                //Boolean represtented as Number(1,0)
+                // Boolean represtented as Number(1,0)
                 if (scale == 0 && column.length() == 1) {
                     return data -> convertBoolean(column, fieldDefn, data);
                 }
@@ -254,10 +254,10 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
     }
 
     private Object getFloatConverter(Column column, Field fieldDefn, Object data) {
-       if ( data instanceof String) {
-           return Float.parseFloat((String)data);
-       }
-       return convertVariableScale(column, fieldDefn, data);
+        if (data instanceof String) {
+            return Float.parseFloat((String) data);
+        }
+        return convertVariableScale(column, fieldDefn, data);
     }
 
     @Override
@@ -287,9 +287,11 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
     protected Object convertFloat(Column column, Field fieldDefn, Object data) {
         if (data instanceof Float) {
             return data;
-        } else if (data instanceof NUMBER) {
+        }
+        else if (data instanceof NUMBER) {
             return ((NUMBER) data).floatValue();
-        } else if (data instanceof BINARY_FLOAT) {
+        }
+        else if (data instanceof BINARY_FLOAT) {
             try {
                 return ((BINARY_FLOAT) data).floatValue();
             }
@@ -320,7 +322,8 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
         if (data instanceof NUMBER) {
             try {
                 data = ((NUMBER) data).bigDecimalValue();
-            } catch (SQLException e) {
+            }
+            catch (SQLException e) {
                 throw new RuntimeException("Couldn't convert value for column " + column.name(), e);
             }
         }
@@ -334,7 +337,7 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
         return super.convertDecimal(column, fieldDefn, data);
     }
 
-    private BigDecimal withScaleAdjustedIfNeeded(Column column, BigDecimal data) {
+    protected BigDecimal withScaleAdjustedIfNeeded(Column column, BigDecimal data) {
         if (column.scale().isPresent() && column.scale().get() > data.scale()) {
             data = data.setScale(column.scale().get());
         }
@@ -351,7 +354,8 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
         if (data instanceof NUMBER) {
             try {
                 data = ((NUMBER) data).byteValue();
-            } catch (SQLException e) {
+            }
+            catch (SQLException e) {
                 throw new RuntimeException("Couldn't convert value for column " + column.name(), e);
             }
         }
@@ -363,7 +367,8 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
         if (data instanceof NUMBER) {
             try {
                 data = ((NUMBER) data).shortValue();
-            } catch (SQLException e) {
+            }
+            catch (SQLException e) {
                 throw new RuntimeException("Couldn't convert value for column " + column.name(), e);
             }
         }
@@ -388,7 +393,8 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
         if (data instanceof NUMBER) {
             try {
                 data = ((NUMBER) data).longValue();
-            } catch (SQLException e) {
+            }
+            catch (SQLException e) {
                 throw new RuntimeException("Couldn't convert value for column " + column.name(), e);
             }
         }
@@ -418,12 +424,15 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
         return convertValue(column, fieldDefn, data, BYTE_FALSE, (r) -> {
             if (data instanceof Byte) {
                 r.deliver(data);
-            } else if (data instanceof Number) {
+            }
+            else if (data instanceof Number) {
                 Number value = (Number) data;
                 r.deliver(value.byteValue());
-            } else if (data instanceof Boolean) {
+            }
+            else if (data instanceof Boolean) {
                 r.deliver(NumberConversions.getByte((boolean) data));
-            } else if (data instanceof String) {
+            }
+            else if (data instanceof String) {
                 r.deliver(Byte.parseByte((String) data));
             }
         });
@@ -438,7 +447,8 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
         // TODO Need to handle special values, it is not supported in variable scale decimal
         else if (data instanceof SpecialValueDecimal) {
             return VariableScaleDecimal.fromLogical(fieldDefn.schema(), (SpecialValueDecimal) data);
-        } else if (data instanceof BigDecimal) {
+        }
+        else if (data instanceof BigDecimal) {
             return VariableScaleDecimal.fromLogical(fieldDefn.schema(), new SpecialValueDecimal((BigDecimal) data));
         }
         return handleUnknownData(column, fieldDefn, data);
@@ -448,18 +458,22 @@ public class OracleChangeRecordValueConverter extends JdbcValueConverters {
         try {
             if (data instanceof TIMESTAMP) {
                 data = ((TIMESTAMP) data).timestampValue();
-            } else if (data instanceof DATE) {
+            }
+            else if (data instanceof DATE) {
                 data = ((DATE) data).timestampValue();
-            } else if (data instanceof TIMESTAMPTZ) {
+            }
+            else if (data instanceof TIMESTAMPTZ) {
                 final TIMESTAMPTZ ts = (TIMESTAMPTZ) data;
                 data = ZonedDateTime.ofInstant(ts.timestampValue(connection.connection()).toInstant(), ts.getTimeZone().toZoneId());
-            } else if (data instanceof TIMESTAMPLTZ) {
+            }
+            else if (data instanceof TIMESTAMPLTZ) {
                 // JDBC driver throws an exception
-//                final TIMESTAMPLTZ ts = (TIMESTAMPLTZ)data;
-//                data = ts.offsetDateTimeValue(connection.connection());
+                // final TIMESTAMPLTZ ts = (TIMESTAMPLTZ)data;
+                // data = ts.offsetDateTimeValue(connection.connection());
                 return null;
             }
-        } catch (SQLException e) {
+        }
+        catch (SQLException e) {
             throw new RuntimeException("Couldn't convert value for column " + column.name(), e);
         }
         return data;

@@ -14,6 +14,7 @@ import org.junit.Rule;
 import org.junit.rules.TestName;
 
 import io.debezium.config.Configuration;
+import io.debezium.config.Configuration.Builder;
 import io.debezium.connector.oracle.util.TestHelper;
 import io.debezium.util.Testing;
 
@@ -24,7 +25,8 @@ import io.debezium.util.Testing;
  */
 public class SnapshotDatatypesIT extends AbstractOracleDatatypesTest {
 
-    @Rule public TestName name = new TestName();
+    @Rule
+    public TestName name = new TestName();
 
     @BeforeClass
     public static void beforeClass() throws SQLException {
@@ -43,26 +45,32 @@ public class SnapshotDatatypesIT extends AbstractOracleDatatypesTest {
         Testing.Debug.enable();
         Testing.Files.delete(TestHelper.DB_HISTORY_PATH);
 
-        Configuration config = TestHelper.defaultConfig()
-                .with(OracleConnectorConfig.TABLE_WHITELIST, getTableWhitelist())
+        Configuration config = connectorConfig()
                 .build();
 
         start(OracleConnector.class, config);
         assertConnectorIsRunning();
 
-        Thread.sleep(2000);
+        waitForSnapshotToBeCompleted(TestHelper.CONNECTOR_NAME, TestHelper.SERVER_NAME);
+    }
+
+    protected Builder connectorConfig() {
+        return TestHelper.defaultConfig()
+                .with(OracleConnectorConfig.TABLE_WHITELIST, getTableWhitelist());
     }
 
     private String getTableWhitelist() {
-        switch(name.getMethodName()) {
+        switch (name.getMethodName()) {
             case "stringTypes":
-                return "ORCLPDB1.debezium.type_string";
+                return "debezium.type_string";
             case "fpTypes":
-                return "ORCLPDB1.debezium.type_fp";
+            case "fpTypesAsString":
+            case "fpTypesAsDouble":
+                return "debezium.type_fp";
             case "intTypes":
-                return "ORCLPDB1.debezium.type_int";
+                return "debezium.type_int";
             case "timeTypes":
-                return "ORCLPDB1.debezium.type_time";
+                return "debezium.type_time";
             default:
                 throw new IllegalArgumentException("Unexpected test method: " + name.getMethodName());
         }

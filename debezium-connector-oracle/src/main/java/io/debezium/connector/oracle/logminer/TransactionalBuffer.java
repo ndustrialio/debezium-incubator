@@ -5,15 +5,6 @@
  */
 package io.debezium.connector.oracle.logminer;
 
-import io.debezium.annotation.NotThreadSafe;
-import io.debezium.connector.oracle.OracleConnector;
-import io.debezium.pipeline.ErrorHandler;
-import io.debezium.pipeline.source.spi.ChangeEventSource;
-import io.debezium.util.Threads;
-import org.apache.kafka.connect.errors.DataException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.util.ArrayList;
@@ -23,6 +14,16 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import org.apache.kafka.connect.errors.DataException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.debezium.annotation.NotThreadSafe;
+import io.debezium.connector.oracle.OracleConnector;
+import io.debezium.pipeline.ErrorHandler;
+import io.debezium.pipeline.source.spi.ChangeEventSource;
+import io.debezium.util.Threads;
 
 /**
  * @author Andrey Pustovetov

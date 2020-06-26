@@ -5,22 +5,6 @@
  */
 package io.debezium.connector.cassandra;
 
-import com.datastax.driver.core.ColumnMetadata;
-import com.datastax.driver.core.ConsistencyLevel;
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.TableMetadata;
-import com.datastax.driver.core.querybuilder.BuiltStatement;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
-import com.datastax.driver.core.querybuilder.Select;
-import io.debezium.connector.cassandra.exceptions.CassandraConnectorTaskException;
-import io.debezium.connector.cassandra.transforms.CassandraTypeDeserializer;
-import org.apache.avro.Schema;
-import org.apache.cassandra.config.DatabaseDescriptor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.time.Duration;
 import java.util.HashSet;
@@ -30,11 +14,31 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.kafka.connect.data.Schema;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.datastax.driver.core.ColumnMetadata;
+import com.datastax.driver.core.ConsistencyLevel;
+import com.datastax.driver.core.DataType;
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
+import com.datastax.driver.core.TableMetadata;
+import com.datastax.driver.core.querybuilder.BuiltStatement;
+import com.datastax.driver.core.querybuilder.QueryBuilder;
+import com.datastax.driver.core.querybuilder.Select;
+
+import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.cassandra.exceptions.CassandraConnectorTaskException;
+import io.debezium.connector.cassandra.transforms.CassandraTypeDeserializer;
+import io.debezium.time.Conversions;
+import io.debezium.util.Collect;
 
 /**
  * This reader is responsible for initial bootstrapping of a table,
  * which entails converting each row into a change event and enqueueing
- * that event to the {@link BlockingEventQueue}.
+ * that event to the {@link ChangeEventQueue}.
  *
  * IMPORTANT: Currently, only when a snapshot is completed will the OffsetWriter
  * record the table in the offset.properties file (with filename "" and position
@@ -47,9 +51,10 @@ public class SnapshotProcessor extends AbstractProcessor {
     private static final String NAME = "Snapshot Processor";
     private static final String CASSANDRA_NOW_UNIXTIMESTAMP = "UNIXTIMESTAMPOF(NOW())";
     private static final String EXECUTION_TIME_ALIAS = "execution_time";
+    private static final Set<DataType.Name> collectionTypes = Collect.unmodifiableSet(DataType.Name.LIST, DataType.Name.SET, DataType.Name.MAP);
 
     private final CassandraClient cassandraClient;
-    private final BlockingEventQueue<Event> queue;
+    private final ChangeEventQueue<Event> queue;
     private final OffsetWriter offsetWriter;
     private final SchemaHolder schemaHolder;
     private final RecordMaker recordMaker;
@@ -65,7 +70,9 @@ public class SnapshotProcessor extends AbstractProcessor {
         queue = context.getQueue();
         offsetWriter = context.getOffsetWriter();
         schemaHolder = context.getSchemaHolder();
-        recordMaker = new RecordMaker(context.getCassandraConnectorConfig().tombstonesOnDelete(), new Filters(context.getCassandraConnectorConfig().fieldBlacklist()));
+        recordMaker = new RecordMaker(context.getCassandraConnectorConfig().tombstonesOnDelete(),
+                new Filters(context.getCassandraConnectorConfig().fieldBlacklist()),
+                context.getCassandraConnectorConfig());
         snapshotMode = context.getCassandraConnectorConfig().snapshotMode();
         consistencyLevel = context.getCassandraConnectorConfig().snapshotConsistencyLevel();
     }
@@ -82,12 +89,14 @@ public class SnapshotProcessor extends AbstractProcessor {
 
     @Override
     public void process() {
-        if (snapshotMode ==CassandraConnectorConfig.SnapshotMode.ALWAYS) {
+        if (snapshotMode == CassandraConnectorConfig.SnapshotMode.ALWAYS) {
             snapshot();
-        } else if (snapshotMode == CassandraConnectorConfig.SnapshotMode.INITIAL && initial) {
+        }
+        else if (snapshotMode == CassandraConnectorConfig.SnapshotMode.INITIAL && initial) {
             snapshot();
             initial = false;
-        } else {
+        }
+        else {
             LOGGER.debug("Skipping snapshot [mode: {}]", snapshotMode);
         }
     }
@@ -118,10 +127,12 @@ public class SnapshotProcessor extends AbstractProcessor {
                 long endTime = System.currentTimeMillis();
                 long durationInSeconds = Duration.ofMillis(endTime - startTime).getSeconds();
                 LOGGER.info("Snapshot completely queued in {} seconds for tables: {}", durationInSeconds, tableArr);
-            } else {
+            }
+            else {
                 LOGGER.info("No tables to snapshot");
             }
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             throw new CassandraConnectorTaskException(e);
         }
     }
@@ -146,6 +157,7 @@ public class SnapshotProcessor extends AbstractProcessor {
         LOGGER.info("Executing snapshot query '{}' with consistency level {}", statement.getQueryString(), statement.getConsistencyLevel());
         ResultSet resultSet = cassandraClient.execute(statement);
         processResultSet(tableMetadata, resultSet);
+        LOGGER.debug("The snapshot of table '{}' has been taken", tableName(tableMetadata));
     }
 
     /**
@@ -161,14 +173,15 @@ public class SnapshotProcessor extends AbstractProcessor {
     private static BuiltStatement generateSnapshotStatement(TableMetadata tableMetadata) {
         List<String> allCols = tableMetadata.getColumns().stream().map(ColumnMetadata::getName).collect(Collectors.toList());
         Set<String> primaryCols = tableMetadata.getPrimaryKey().stream().map(ColumnMetadata::getName).collect(Collectors.toSet());
+        List<String> collectionCols = tableMetadata.getColumns().stream().filter(cm -> collectionTypes.contains(cm.getType().getName()))
+                .map(ColumnMetadata::getName).collect(Collectors.toList());
 
         Select.Selection selection = QueryBuilder.select().raw(CASSANDRA_NOW_UNIXTIMESTAMP).as(EXECUTION_TIME_ALIAS);
         for (String col : allCols) {
             selection.column(withQuotes(col));
 
-            if (!primaryCols.contains(col)) {
+            if (!primaryCols.contains(col) && !collectionCols.contains(col)) {
                 selection.ttl(withQuotes(col)).as(ttlAlias(col));
-                selection.writeTime(withQuotes(col)).as(writetimeAlias(col));
             }
         }
         return selection.from(tableMetadata.getKeyspace().getName(), tableMetadata.getName());
@@ -176,7 +189,7 @@ public class SnapshotProcessor extends AbstractProcessor {
 
     /**
      * Process the result set from the query. Each row is converted into a {@link ChangeRecord}
-     * and enqueued to the {@link BlockingEventQueue}.
+     * and enqueued to the {@link ChangeEventQueue}.
      */
     private void processResultSet(TableMetadata tableMetadata, ResultSet resultSet) throws IOException {
         String tableName = tableName(tableMetadata);
@@ -199,18 +212,20 @@ public class SnapshotProcessor extends AbstractProcessor {
         while (rowIter.hasNext()) {
             if (isRunning()) {
                 Row row = rowIter.next();
-                WriteTimeHolder writeTimeHolder = new WriteTimeHolder();
-                RowData after = extractRowData(row, tableMetadata.getColumns(), partitionKeyNames, clusteringKeyNames, writeTimeHolder);
-                SourceInfo source = new SourceInfo(DatabaseDescriptor.getClusterName(), OffsetPosition.defaultOffsetPosition(), keyspaceTable, true, writeTimeHolder.get());
+                Object executionTime = readExecutionTime(row);
+                RowData after = extractRowData(row, tableMetadata.getColumns(), partitionKeyNames, clusteringKeyNames, executionTime);
                 // only mark offset if there are no more rows left
                 boolean markOffset = !rowIter.hasNext();
-                recordMaker.insert(source, after, keySchema, valueSchema, markOffset, queue::enqueue);
+                recordMaker.insert(DatabaseDescriptor.getClusterName(), OffsetPosition.defaultOffsetPosition(),
+                        keyspaceTable, true, Conversions.toInstantFromMicros(TimeUnit.MICROSECONDS.convert((long) executionTime, TimeUnit.MILLISECONDS)),
+                        after, keySchema, valueSchema, markOffset, queue::enqueue);
                 rowNum++;
                 if (rowNum % 10_000 == 0) {
                     LOGGER.info("Queued {} snapshot records from table {}", rowNum, tableName);
                     metrics.setRowsScanned(tableName, rowNum);
                 }
-            } else {
+            }
+            else {
                 LOGGER.warn("Terminated snapshot processing while table {} is in progress", tableName);
                 metrics.setRowsScanned(tableName, rowNum);
                 return;
@@ -222,25 +237,19 @@ public class SnapshotProcessor extends AbstractProcessor {
     /**
      * This function extracts the relevant row data from {@link Row} and updates the maximum writetime for each row.
      */
-    private static RowData extractRowData(Row row, List<ColumnMetadata> columns, Set<String> partitionKeyNames, Set<String> clusteringKeyNames, WriteTimeHolder writeTimeHolder) {
+    private static RowData extractRowData(Row row, List<ColumnMetadata> columns, Set<String> partitionKeyNames, Set<String> clusteringKeyNames, Object executionTime) {
         RowData rowData = new RowData();
 
-        Object executionTime = readExecutionTime(row);
         for (ColumnMetadata columnMetadata : columns) {
             String name = columnMetadata.getName();
             Object value = readCol(row, name, columnMetadata);
             Object deletionTs = null;
             CellData.ColumnType type = getType(name, partitionKeyNames, clusteringKeyNames);
 
-            if (type == CellData.ColumnType.REGULAR && value != null) {
+            if (type == CellData.ColumnType.REGULAR && value != null && !collectionTypes.contains(columnMetadata.getType().getName())) {
                 Object ttl = readColTtl(row, name);
                 if (ttl != null && executionTime != null) {
                     deletionTs = calculateDeletionTs(executionTime, ttl);
-                }
-
-                Object writeTime = readColWritetime(row, name);
-                if (writeTime != null) {
-                    writeTimeHolder.setIfMax((long) writeTime);
                 }
             }
 
@@ -254,9 +263,11 @@ public class SnapshotProcessor extends AbstractProcessor {
     private static CellData.ColumnType getType(String name, Set<String> partitionKeyNames, Set<String> clusteringKeyNames) {
         if (partitionKeyNames.contains(name)) {
             return CellData.ColumnType.PARTITION;
-        } else if (clusteringKeyNames.contains(name)) {
+        }
+        else if (clusteringKeyNames.contains(name)) {
             return CellData.ColumnType.CLUSTERING;
-        } else {
+        }
+        else {
             return CellData.ColumnType.REGULAR;
         }
     }
@@ -267,10 +278,6 @@ public class SnapshotProcessor extends AbstractProcessor {
 
     private static Object readCol(Row row, String col, ColumnMetadata cm) {
         return CassandraTypeDeserializer.deserialize(cm.getType(), row.getBytesUnsafe(col));
-    }
-
-    private static Object readColWritetime(Row row, String col) {
-        return CassandraTypeDeserializer.deserialize(DataType.bigint(), row.getBytesUnsafe(writetimeAlias(col)));
     }
 
     private static Object readColTtl(Row row, String col) {
@@ -284,10 +291,6 @@ public class SnapshotProcessor extends AbstractProcessor {
         return TimeUnit.MICROSECONDS.convert((long) executionTime, TimeUnit.MILLISECONDS) + TimeUnit.MICROSECONDS.convert((int) ttl, TimeUnit.SECONDS);
     }
 
-    private static String writetimeAlias(String colName) {
-        return colName + "_writetime";
-    }
-
     private static String ttlAlias(String colName) {
         return colName + "_ttl";
     }
@@ -298,22 +301,5 @@ public class SnapshotProcessor extends AbstractProcessor {
 
     private static String tableName(TableMetadata tm) {
         return tm.getKeyspace().getName() + "." + tm.getName();
-    }
-
-    /**
-     * A mutable structure which is used to hold the maximum writetime value of a given row.
-     */
-    private static class WriteTimeHolder {
-        private long maxTs = -1;
-
-        void setIfMax(long ts) {
-            if (ts > maxTs) {
-                maxTs = ts;
-            }
-        }
-
-        long get() {
-            return maxTs;
-        }
     }
 }

@@ -5,6 +5,18 @@
  */
 package io.debezium.connector.oracle.logminer;
 
+import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Duration;
+import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import io.debezium.connector.oracle.OracleConnection;
 import io.debezium.connector.oracle.OracleConnectorConfig;
 import io.debezium.connector.oracle.OracleDatabaseSchema;
@@ -18,17 +30,6 @@ import io.debezium.relational.Table;
 import io.debezium.relational.TableId;
 import io.debezium.util.Clock;
 import io.debezium.util.Metronome;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.math.BigDecimal;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Timestamp;
-import java.time.Duration;
-import java.util.Map;
 
 /**
  * A {@link StreamingChangeEventSource} based on Oracle's LogMiner utility.
@@ -48,18 +49,18 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
     private final TransactionalBuffer transactionalBuffer;
     private final OracleDmlParser dmlParser;
     private final String catalogName;
-    //private final int posVersion;
+    // private final int posVersion;
     private OracleConnectorConfig connectorConfig;
 
     public LogMinerStreamingChangeEventSource(OracleConnectorConfig connectorConfig, OracleOffsetContext offsetContext, OracleConnection jdbcConnection,
-             EventDispatcher<TableId> dispatcher, ErrorHandler errorHandler, Clock clock, OracleDatabaseSchema schema) {
+                                              EventDispatcher<TableId> dispatcher, ErrorHandler errorHandler, Clock clock, OracleDatabaseSchema schema) {
         this.jdbcConnection = jdbcConnection;
         this.dispatcher = dispatcher;
         this.clock = clock;
         this.schema = schema;
         this.offsetContext = offsetContext;
         this.tablenameCaseInsensitive = connectorConfig.getTablenameCaseInsensitive();
-        //this.posVersion = connectorConfig.getOracleVersion().getPosVersion();
+        // this.posVersion = connectorConfig.getOracleVersion().getPosVersion();
         OracleChangeRecordValueConverter converters = new OracleChangeRecordValueConverter(jdbcConnection);
 
         this.connectorConfig = connectorConfig;
@@ -82,9 +83,10 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
         Metronome metronome = Metronome.sleeper(Duration.ofMillis(1000L), clock);
         ResultSet res = null;
 
+        LOGGER.info("Schema name: {}", connectorConfig.getSchemaName());
         try (Connection connection = jdbcConnection.connection();
-             PreparedStatement fetchChangesFromMiningView =
-                     connection.prepareStatement(SqlUtils.queryLogMinerContents(connectorConfig.getSchemaName(), jdbcConnection.username()))) {
+                PreparedStatement fetchChangesFromMiningView = connection
+                        .prepareStatement(SqlUtils.queryLogMinerContents(connectorConfig.getSchemaName(), jdbcConnection.username()))) {
             long lastProcessedScn = offsetContext.getScn(); // last processes Scn
             long oldestScnInOnlineRedo = LogMinerHelper.getFirstOnlineLogScn(connection);
             if (lastProcessedScn < oldestScnInOnlineRedo) {
@@ -97,21 +99,24 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
             if (connectorConfig.getPdbName() != null) {
                 jdbcConnection.resetSessionToCdb();
             }
+            LOGGER.info("Building data dictionary");
             LogMinerHelper.buildDataDictionary(connection);
+            LOGGER.info("Adding online redo log files");
             LogMinerHelper.addOnlineRedoLogFilesForMining(connection);
             String currentRedoLogFile = LogMinerHelper.getCurrentRedoLogFile(connection);
 
             // 2. Querying LogMinerRowLcr(s) from Log miner while running
             while (context.isRunning()) {
-                LOGGER.trace("Receiving a change from LogMiner");
+                LOGGER.info("Receiving a change from LogMiner");
 
                 long currentScn = LogMinerHelper.getCurrentScn(connection);
-                LOGGER.debug("lastProcessedScn: {}, endScn: {}", lastProcessedScn, currentScn);
+                LOGGER.info("lastProcessedScn: {}, endScn: {}", lastProcessedScn, currentScn);
 
                 String possibleNewCurrentLogFile = LogMinerHelper.getCurrentRedoLogFile(connection);
 
                 // if switching is happening too frequently, increase log file sizes
                 if (!currentRedoLogFile.equals(possibleNewCurrentLogFile)) {
+                    LOGGER.info("Switching redo log files");
                     LogMinerHelper.endMining(connection);
                     LogMinerHelper.buildDataDictionary(connection);
                     LogMinerHelper.addOnlineRedoLogFilesForMining(connection);
@@ -129,7 +134,8 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
 
                 if (res.isBeforeFirst()) {
                     processResult(res, context);
-                } else {
+                }
+                else {
                     metronome.pause();
                 }
                 // update SCN in offset context only if buffer is empty
@@ -139,26 +145,31 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                 lastProcessedScn = currentScn;
                 res.close();
             }
-        } catch (Throwable e) {
+        }
+        catch (Throwable e) {
             throw new RuntimeException(e);
-        } finally {
+        }
+        finally {
             // 3. disconnect
             try (Connection connection = jdbcConnection.connection()) {
                 LogMinerHelper.endMining(connection);
-            } catch (SQLException e) {
+            }
+            catch (SQLException e) {
                 LOGGER.error("Cannot close Log Miner session gracefully: {}", e.getMessage());
             }
             if (res != null) {
                 try {
                     res.close();
-                } catch (SQLException e) {
+                }
+                catch (SQLException e) {
                     LOGGER.error("Cannot close result set due to the :{}", e.getMessage());
                 }
             }
             try {
                 jdbcConnection.close();
                 transactionalBuffer.close();
-            } catch (SQLException e) {
+            }
+            catch (SQLException e) {
                 LOGGER.error("Cannot close JDBC connection: {}", e.getMessage());
             }
         }
@@ -183,21 +194,21 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
             String segOwner = RowMapper.getSegOwner(res);
 
             String logMessage = String.format("transactionId = %s, actualScn= %s, committed SCN= %s, userName= %s,segOwner=%s, segName=%s, sequence=%s",
-                                    txId, scn, commitScn, userName, segOwner, RowMapper.getSegName(res), RowMapper.getSequence(res));
+                    txId, scn, commitScn, userName, segOwner, RowMapper.getSegName(res), RowMapper.getSequence(res));
             // Commit
             if (operationCode == RowMapper.COMMIT) {
                 LOGGER.info("COMMIT, {}", logMessage);
                 transactionalBuffer.commit(txId, changeTime, context);
             }
 
-            //Rollback
+            // Rollback
             if (operationCode == RowMapper.ROLLBACK) {
                 LOGGER.info("ROLLBACK, {}", logMessage);
                 transactionalBuffer.rollback(txId);
             }
 
             if (!isTableWhitelisted(tableName)) {
-                LOGGER.debug("table {} is not in the whitelist, skipped", tableName);
+                LOGGER.info("table {} is not in the whitelist, skipped", tableName);
                 continue;
             }
 
@@ -217,6 +228,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                         LOGGER.error("Following statement was not parsed: {}", redo_sql);
                         continue;
                     }
+                    LOGGER.info("DML PARSED");
                     rowLcr.setObjectOwner(userName);
                     rowLcr.setSourceTime(changeTime);
                     rowLcr.setTransactionId(txId);
@@ -236,11 +248,11 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
                         Table table = schema.tableFor(tableId);
                         LOGGER.debug("Processing DML event {} scn {}", rowLcr.toString(), scn);
                         dispatcher.dispatchDataChangeEvent(tableId,
-                                new LogMinerChangeRecordEmitter(offsetContext, rowLcr, table, clock)
-                        );
+                                new LogMinerChangeRecordEmitter(offsetContext, rowLcr, table, clock));
                     });
 
-                } catch (Exception e) {
+                }
+                catch (Exception e) {
                     LOGGER.error("Following statement: {} cannot be parsed due to the : {}", redo_sql, e.getMessage());
                 }
             }
@@ -251,15 +263,19 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
         if (tableName == null) {
             return false;
         }
+        LOGGER.info(tableName);
+
         return schema.tableIds()
                 .stream()
-                .anyMatch(tableId -> tableId.table().toLowerCase().contains(tableName.toLowerCase()));
+                .anyMatch(tableId -> {
+                    LOGGER.info(tableId.table().toLowerCase());
+                    return tableId.table().toLowerCase().contains(tableName.toLowerCase());
+                });
     }
 
-
-    // todo this is temporary debugging info,  remove.
+    // todo this is temporary debugging info, remove.
     private void traceInfo(Connection connection, String info) throws SQLException {
-        //String checkQuery = "select member, log.status, log.first_change# from v$log log, v$logfile  f  where log.group#=f.group# order by 1 asc";
+        // String checkQuery = "select member, log.status, log.first_change# from v$log log, v$logfile f where log.group#=f.group# order by 1 asc";
         String checkQuery = "select f.member, log.status, log.first_change#, f.TYPE, f.status, f.group#, f.IS_RECOVERY_DEST_FILE, log.archived " +
                 "from v$log log, v$logfile f  where log.group#=f.group# and log.status='CURRENT'";
 
@@ -274,7 +290,7 @@ public class LogMinerStreamingChangeEventSource implements StreamingChangeEventS
             Long fileGroup = result.getLong(6);
             String dest = result.getString(7);
             String archived = result.getString(8);
-            LOGGER.trace(info + "= filename = " + fileName + ", status: " + status + ", first SCN= " + changeScn +
+            LOGGER.info(info + "= filename = " + fileName + ", status: " + status + ", first SCN= " + changeScn +
                     ", file type: " + fileType + ", file group: " + fileGroup
                     + ", dest: " + dest + ", archived=" + archived);
         }

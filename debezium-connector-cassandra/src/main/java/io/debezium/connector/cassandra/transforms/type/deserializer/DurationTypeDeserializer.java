@@ -5,24 +5,21 @@
  */
 package io.debezium.connector.cassandra.transforms.type.deserializer;
 
-import io.debezium.connector.cassandra.transforms.CassandraTypeToAvroSchemaMapper;
-import org.apache.avro.Schema;
-import org.apache.avro.generic.GenericRecordBuilder;
+import java.nio.ByteBuffer;
+
 import org.apache.cassandra.cql3.Duration;
 import org.apache.cassandra.db.marshal.AbstractType;
 
-import java.nio.ByteBuffer;
+import io.debezium.connector.cassandra.transforms.CassandraTypeKafkaSchemaBuilders;
+import io.debezium.time.NanoDuration;
 
 public class DurationTypeDeserializer extends BasicTypeDeserializer {
     /*
-     * According to the official spec, Avro has a duration type of (almost) the same format of the cassandra
-     * duration type, but sadly it's not actually represented in the code anywhere!
-     * issue: https://issues.apache.org/jira/browse/AVRO-2123
-     * So, for now at least, duration is serialized into a record with fields months, days, and nanos.
+     * Cassandra Duration type is serialized into micro seconds in double.
      */
 
     public DurationTypeDeserializer() {
-        super(CassandraTypeToAvroSchemaMapper.DURATION_TYPE);
+        super(CassandraTypeKafkaSchemaBuilders.DURATION_TYPE);
     }
 
     @Override
@@ -31,10 +28,6 @@ public class DurationTypeDeserializer extends BasicTypeDeserializer {
         int months = duration.getMonths();
         int days = duration.getDays();
         long nanoSec = duration.getNanoseconds();
-
-        Schema durationSchema = getSchema(abstractType);
-        return new GenericRecordBuilder(durationSchema).set("months", months)
-                                                       .set("days", days)
-                                                       .set("nanos", nanoSec).build();
+        return NanoDuration.durationNanos(0, months, days, 0, 0, 0, nanoSec);
     }
 }

@@ -5,6 +5,14 @@
  */
 package io.debezium.connector.oracle.antlr.listener;
 
+import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getTableName;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import org.apache.kafka.connect.data.Field;
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.SchemaBuilder;
 
 import io.debezium.connector.oracle.antlr.OracleDmlParser;
 import io.debezium.connector.oracle.logminer.OracleChangeRecordValueConverter;
@@ -16,14 +24,7 @@ import io.debezium.relational.Column;
 import io.debezium.relational.Table;
 import io.debezium.relational.ValueConverter;
 import io.debezium.text.ParsingException;
-import org.apache.kafka.connect.data.Field;
-import org.apache.kafka.connect.data.Schema;
-import org.apache.kafka.connect.data.SchemaBuilder;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
-
-import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getTableName;
 /**
  * This class contains common methods for DML parser listeners
  */
@@ -55,7 +56,7 @@ abstract class BaseDmlParserListener<T> extends PlSqlParserBaseListener {
      * @param ctx DML table expression context
      */
     void init(PlSqlParser.Dml_table_expression_clauseContext ctx) {
-        String tableName  = getTableName(ctx.tableview_name());
+        String tableName = getTableName(ctx.tableview_name());
         table = parser.databaseTables().forTable(catalogName, schemaName, tableName);
         if (table == null) {
             throw new ParsingException(null, "Trying to parse a table, which does not exist.");
@@ -101,19 +102,19 @@ abstract class BaseDmlParserListener<T> extends PlSqlParserBaseListener {
      * @param text supplied value which might be enclosed by apostrophes.
      * @return clean String or null in case if test = "null" or = "NULL"
      */
-    String removeApostrophes(String text){
-        if (text != null && text.indexOf("'") == 0 && text.lastIndexOf("'") == text.length()-1){
-            return text.substring(1, text.length() -1);
+    String removeApostrophes(String text) {
+        if (text != null && text.indexOf("'") == 0 && text.lastIndexOf("'") == text.length() - 1) {
+            return text.substring(1, text.length() - 1);
         }
-        if ("null".equalsIgnoreCase(text)){
+        if ("null".equalsIgnoreCase(text)) {
             return null;
         }
         return text;
     }
 
-    private String stripeQuotes(String text){
-        if (text != null && text.indexOf("\"") == 0 && text.lastIndexOf("\"") == text.length()-1){
-            return text.substring(1, text.length() -1);
+    private String stripeQuotes(String text) {
+        if (text != null && text.indexOf("\"") == 0 && text.lastIndexOf("\"") == text.length() - 1) {
+            return text.substring(1, text.length() - 1);
         }
         return text;
     }

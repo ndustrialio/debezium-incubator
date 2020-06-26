@@ -12,7 +12,8 @@ import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
  */
 class ParserListenerUtils {
 
-    private ParserListenerUtils() {}
+    private ParserListenerUtils() {
+    }
 
     /**
      * Obtains the table name
@@ -22,7 +23,8 @@ class ParserListenerUtils {
     static String getTableName(final PlSqlParser.Tableview_nameContext tableview_name) {
         if (tableview_name.id_expression() != null) {
             return stripeQuotes(tableview_name.id_expression().getText());
-        } else {
+        }
+        else {
             return stripeQuotes(tableview_name.identifier().id_expression().getText());
         }
     }
@@ -31,17 +33,17 @@ class ParserListenerUtils {
         return stripeQuotes(ctx.identifier().id_expression().getText());
     }
 
-    static String stripeQuotes(String text){
-        if (text != null && text.indexOf("\"") == 0 && text.lastIndexOf("\"") == text.length()-1){
-            return text.substring(1, text.length() -1);
+    static String stripeQuotes(String text) {
+        if (text != null && text.indexOf("\"") == 0 && text.lastIndexOf("\"") == text.length() - 1) {
+            return text.substring(1, text.length() - 1);
         }
         return text;
     }
 
     // todo make it better
-    static String stripeAlias(String text, String alias){
+    static String stripeAlias(String text, String alias) {
         int index = text.indexOf(alias + ".");
-        if (text != null && index >= 0){
+        if (text != null && index >= 0) {
             return text.substring(alias.length() + 1);
         }
         return text;

@@ -5,15 +5,18 @@
  */
 package io.debezium.connector.cassandra;
 
-import com.google.common.annotations.VisibleForTesting;
-import io.debezium.connector.cassandra.exceptions.CassandraConnectorTaskException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.annotations.VisibleForTesting;
+
+import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.cassandra.exceptions.CassandraConnectorTaskException;
 
 /**
  * A thread that constantly polls records from the queue and emit them to Kafka via the KafkaRecordEmitter.
@@ -22,7 +25,7 @@ import java.util.List;
 public class QueueProcessor extends AbstractProcessor {
     private static final Logger LOGGER = LoggerFactory.getLogger(QueueProcessor.class);
     private static final String NAME = "Change Event Queue Processor";
-    private final BlockingEventQueue<Event> blockingEventQueue;
+    private final ChangeEventQueue<Event> queue;
     private final KafkaRecordEmitter kafkaRecordEmitter;
     private final String commitLogRelocationDir;
 
@@ -32,24 +35,26 @@ public class QueueProcessor extends AbstractProcessor {
     public QueueProcessor(CassandraConnectorContext context) {
         this(context, new KafkaRecordEmitter(
                 context.getCassandraConnectorConfig().kafkaTopicPrefix(),
+                context.getCassandraConnectorConfig().getHeartbeatTopicsPrefix(),
                 context.getCassandraConnectorConfig().getKafkaConfigs(),
                 context.getOffsetWriter(),
                 context.getCassandraConnectorConfig().offsetFlushIntervalMs(),
-                context.getCassandraConnectorConfig().maxOffsetFlushSize()
-        ));
+                context.getCassandraConnectorConfig().maxOffsetFlushSize(),
+                context.getCassandraConnectorConfig().getKeyConverter(),
+                context.getCassandraConnectorConfig().getValueConverter()));
     }
 
     @VisibleForTesting
     QueueProcessor(CassandraConnectorContext context, KafkaRecordEmitter emitter) {
         super(NAME, 0);
-        this.blockingEventQueue = context.getQueue();
+        this.queue = context.getQueue();
         this.kafkaRecordEmitter = emitter;
         this.commitLogRelocationDir = context.getCassandraConnectorConfig().commitLogRelocationDir();
     }
 
     @Override
     public void process() throws InterruptedException {
-        List<Event> events = blockingEventQueue.poll();
+        List<Event> events = queue.poll();
         for (Event event : events) {
             processEvent(event);
         }

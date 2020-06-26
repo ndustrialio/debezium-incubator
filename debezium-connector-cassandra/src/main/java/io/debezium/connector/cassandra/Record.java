@@ -5,27 +5,19 @@
  */
 package io.debezium.connector.cassandra;
 
-import com.datastax.driver.core.ColumnMetadata;
-import com.datastax.driver.core.TableMetadata;
-import io.debezium.connector.cassandra.transforms.CassandraTypeConverter;
-import io.debezium.connector.cassandra.transforms.CassandraTypeToAvroSchemaMapper;
-import org.apache.avro.Schema;
-import org.apache.avro.SchemaBuilder;
-import org.apache.avro.generic.GenericRecord;
-import org.apache.avro.generic.GenericRecordBuilder;
-import org.apache.cassandra.db.marshal.AbstractType;
+import static io.debezium.connector.cassandra.SchemaHolder.getFieldSchema;
 
 import java.util.List;
 import java.util.Objects;
 
-import static io.debezium.connector.cassandra.SchemaHolder.getFieldSchema;
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.Struct;
 
 /**
  * An immutable data structure representing a change event, and can be converted
- * to a GenericRecord representing key/value of the change event.
+ * to a kafka connect Struct representing key/value of the change event.
  */
 public abstract class Record implements Event {
-    static final String NAMESPACE = "io.debezium.connector.cassandra";
     static final String AFTER = "after";
     static final String OPERATION = "op";
     static final String SOURCE = "source";
@@ -70,57 +62,29 @@ public abstract class Record implements Event {
         this.ts = ts;
     }
 
-    public GenericRecord buildKey() {
+    public Struct buildKey() {
         if (keySchema == null) {
             return null;
         }
 
         List<CellData> primary = rowData.getPrimary();
-        GenericRecordBuilder builder = new GenericRecordBuilder(keySchema);
+        Struct struct = new Struct(keySchema);
         for (CellData cellData : primary) {
-            builder.set(cellData.name, cellData.value);
+            struct.put(cellData.name, cellData.value);
         }
-        return builder.build();
+        return struct;
     }
 
-    public GenericRecord buildValue() {
+    public Struct buildValue() {
         if (valueSchema == null) {
             return null;
         }
 
-        return new GenericRecordBuilder(valueSchema)
-                .set(TIMESTAMP, ts)
-                .set(OPERATION, op.getValue())
-                .set(SOURCE, source.record(getFieldSchema(SOURCE, valueSchema)))
-                .set(AFTER, rowData.record(getFieldSchema(AFTER, valueSchema)))
-                .build();
-    }
-
-    public static Schema keySchema(String connectorName, TableMetadata tm) {
-        if (tm == null) {
-            return null;
-        }
-        SchemaBuilder.FieldAssembler assembler = SchemaBuilder.builder().record(getKeyName(connectorName, tm)).namespace(NAMESPACE).fields();
-        for (ColumnMetadata cm : tm.getPrimaryKey()) {
-            AbstractType<?> convertedType = CassandraTypeConverter.convert(cm.getType());
-            Schema colSchema = CassandraTypeToAvroSchemaMapper.getSchema(convertedType, false);
-            if (colSchema != null) {
-                assembler.name(cm.getName()).type(colSchema).noDefault();
-            }
-        }
-        return (Schema) assembler.endRecord();
-    }
-
-    public static Schema valueSchema(String connectorName, TableMetadata tm) {
-        if (tm == null) {
-            return null;
-        }
-        return SchemaBuilder.builder().record(getValueName(connectorName, tm)).namespace(NAMESPACE).fields()
-                .name(TIMESTAMP).type().longType().noDefault()
-                .name(OPERATION).type().stringType().noDefault()
-                .name(SOURCE).type(SourceInfo.SOURCE_SCHEMA).noDefault()
-                .name(AFTER).type(RowData.rowSchema(tm)).noDefault()
-                .endRecord();
+        return new Struct(valueSchema)
+                .put(TIMESTAMP, ts)
+                .put(OPERATION, op.getValue())
+                .put(SOURCE, source.struct())
+                .put(AFTER, rowData.record(getFieldSchema(AFTER, valueSchema)));
     }
 
     @Override
@@ -151,15 +115,6 @@ public abstract class Record implements Event {
                 && Objects.equals(valueSchema, record.valueSchema)
                 && op == record.op;
     }
-
-    public static String getKeyName(String connectorName, TableMetadata tm) {
-        return connectorName + "." + tm.getKeyspace().getName() + "." + tm.getName() + ".Key";
-    }
-
-    public static String getValueName(String connectorName, TableMetadata tm) {
-        return connectorName + "." + tm.getKeyspace().getName() + "." + tm.getName() + ".Value";
-    }
-
 
     @Override
     public int hashCode() {

@@ -5,15 +5,16 @@
  */
 package io.debezium.connector.cassandra.transforms.type.deserializer;
 
-import io.debezium.connector.cassandra.transforms.CassandraTypeToAvroSchemaMapper;
-import org.apache.avro.Schema;
-import org.apache.avro.SchemaBuilder;
-import org.apache.avro.generic.GenericData;
-import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.ListType;
-
 import java.nio.ByteBuffer;
 import java.util.List;
+
+import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.ListType;
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.SchemaBuilder;
+import org.apache.kafka.connect.data.Values;
+
+import io.debezium.connector.cassandra.transforms.CassandraTypeDeserializer;
 
 public class ListTypeDeserializer extends TypeDeserializer {
 
@@ -21,14 +22,14 @@ public class ListTypeDeserializer extends TypeDeserializer {
     @SuppressWarnings("unchecked")
     public Object deserialize(AbstractType<?> abstractType, ByteBuffer bb) {
         List<?> deserializedList = (List<?>) super.deserialize(abstractType, bb);
-        return new GenericData.Array(getSchema(abstractType), deserializedList);
+        return Values.convertToList(getSchemaBuilder(abstractType).build(), deserializedList);
     }
 
     @Override
-    public Schema getSchema(AbstractType<?> abstractType) {
+    public SchemaBuilder getSchemaBuilder(AbstractType<?> abstractType) {
         ListType<?> listType = (ListType<?>) abstractType;
         AbstractType<?> elementsType = listType.getElementsType();
-        Schema innerSchema = CassandraTypeToAvroSchemaMapper.getSchema(elementsType, false);
-        return SchemaBuilder.array().items(innerSchema);
+        Schema innerSchema = CassandraTypeDeserializer.getSchemaBuilder(elementsType).build();
+        return SchemaBuilder.array(innerSchema);
     }
 }

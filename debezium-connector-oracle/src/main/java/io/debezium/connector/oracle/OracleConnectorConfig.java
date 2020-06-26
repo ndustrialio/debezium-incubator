@@ -5,14 +5,20 @@
  */
 package io.debezium.connector.oracle;
 
+import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigDef.Importance;
+import org.apache.kafka.common.config.ConfigDef.Type;
+import org.apache.kafka.common.config.ConfigDef.Width;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import io.debezium.config.CommonConnectorConfig;
 import io.debezium.config.Configuration;
 import io.debezium.config.EnumeratedValue;
 import io.debezium.config.Field;
+import io.debezium.config.Field.ValidationOutput;
 import io.debezium.connector.AbstractSourceInfo;
 import io.debezium.connector.SourceInfoStructMaker;
-import io.debezium.connector.oracle.xstream.LcrPosition;
-import io.debezium.connector.oracle.xstream.OracleVersion;
 import io.debezium.document.Document;
 import io.debezium.heartbeat.Heartbeat;
 import io.debezium.jdbc.JdbcConfiguration;
@@ -22,12 +28,8 @@ import io.debezium.relational.TableId;
 import io.debezium.relational.Tables.TableFilter;
 import io.debezium.relational.history.HistoryRecordComparator;
 import io.debezium.relational.history.KafkaDatabaseHistory;
-import org.apache.kafka.common.config.ConfigDef;
-import org.apache.kafka.common.config.ConfigDef.Importance;
-import org.apache.kafka.common.config.ConfigDef.Type;
-import org.apache.kafka.common.config.ConfigDef.Width;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import oracle.streams.XStreamUtility;
 
 /**
  * Connector configuration for Oracle.
@@ -59,7 +61,6 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
             .withDescription("Name of the pluggable database when working with a multi-tenant set-up. "
                     + "The CDB name must be given via " + DATABASE_NAME.name() + " in this case.");
 
-
     public static final Field SCHEMA_NAME = Field.create(DATABASE_CONFIG_PREFIX + "schema")
             .withDisplayName("Schema name")
             .withType(Type.STRING)
@@ -78,25 +79,26 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
     public static final Field SNAPSHOT_MODE = Field.create("snapshot.mode")
             .withDisplayName("Snapshot mode")
             .withEnum(SnapshotMode.class, SnapshotMode.INITIAL)
+            .withValidation(OracleConnectorConfig::validateSnapshotMode)
             .withWidth(Width.SHORT)
             .withImportance(Importance.LOW)
             .withDescription("The criteria for running a snapshot upon startup of the connector. "
                     + "Options include: "
                     + "'initial' (the default) to specify the connector should run a snapshot only when no offsets are available for the logical server name; "
-                    + "'initial_schema_only' to specify the connector should run a snapshot of the schema when no offsets are available for the logical server name. ");
+                    + "'schema_only' to specify the connector should run a snapshot of the schema when no offsets are available for the logical server name. ");
 
     public static final Field TABLENAME_CASE_INSENSITIVE = Field.create("database.tablename.case.insensitive")
-        .withDisplayName("Case insensitive table names")
-        .withType(Type.BOOLEAN)
-        .withDefault(false)
-        .withImportance(Importance.LOW)
-        .withDescription("Case insensitive table names; set to 'true' for Oracle 11g, 'false' (default) otherwise.");
+            .withDisplayName("Case insensitive table names")
+            .withType(Type.BOOLEAN)
+            .withDefault(false)
+            .withImportance(Importance.LOW)
+            .withDescription("Case insensitive table names; set to 'true' for Oracle 11g, 'false' (default) otherwise.");
 
     public static final Field ORACLE_VERSION = Field.create("database.oracle.version")
-        .withDisplayName("Oracle version, 11 or 12+")
-        .withEnum(OracleVersion.class, OracleVersion.V12Plus)
-        .withImportance(Importance.LOW)
-        .withDescription("For default Oracle 12+, use default pos_version value v2, for Oracle 11, use pos_version value v1.");
+            .withDisplayName("Oracle version, 11 or 12+")
+            .withEnum(OracleVersion.class, OracleVersion.V12Plus)
+            .withImportance(Importance.LOW)
+            .withDescription("For default Oracle 12+, use default pos_version value v2, for Oracle 11, use pos_version value v1.");
 
     public static final Field SERVER_NAME = RelationalDatabaseConnectorConfig.SERVER_NAME
             .withValidation(CommonConnectorConfig::validateServerNameIsDifferentFromHistoryTopicName);
@@ -121,17 +123,19 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
             RelationalDatabaseConnectorConfig.TABLE_WHITELIST,
             RelationalDatabaseConnectorConfig.TABLE_BLACKLIST,
             RelationalDatabaseConnectorConfig.TABLE_IGNORE_BUILTIN,
+            RelationalDatabaseConnectorConfig.MSG_KEY_COLUMNS,
             CommonConnectorConfig.POLL_INTERVAL_MS,
             CommonConnectorConfig.MAX_BATCH_SIZE,
             CommonConnectorConfig.MAX_QUEUE_SIZE,
             CommonConnectorConfig.SNAPSHOT_DELAY_MS,
+            CommonConnectorConfig.PROVIDE_TRANSACTION_METADATA,
             Heartbeat.HEARTBEAT_INTERVAL,
             Heartbeat.HEARTBEAT_TOPICS_PREFIX,
             TABLENAME_CASE_INSENSITIVE,
             ORACLE_VERSION,
             SCHEMA_NAME,
-            CONNECTOR_ADAPTER
-    );
+            CONNECTOR_ADAPTER,
+            CommonConnectorConfig.EVENT_PROCESSING_FAILURE_HANDLING_MODE);
 
     private final String databaseName;
     private final String pdbName;
@@ -143,7 +147,7 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
     private final String schemaName;
 
     public OracleConnectorConfig(Configuration config) {
-        super(config, config.getString(SERVER_NAME), new SystemTablesPredicate());
+        super(OracleConnector.class, config, config.getString(SERVER_NAME), new SystemTablesPredicate(), x -> x.schema() + "." + x.table(), true);
 
         this.databaseName = config.getString(DATABASE_NAME);
         this.pdbName = config.getString(PDB_NAME);
@@ -159,16 +163,16 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
 
         Field.group(config, "Oracle", RelationalDatabaseConnectorConfig.SERVER_NAME, DATABASE_NAME, PDB_NAME,
                 XSTREAM_SERVER_NAME, SNAPSHOT_MODE, CONNECTOR_ADAPTER);
-        Field.group(config, "Oracle", SERVER_NAME, DATABASE_NAME, PDB_NAME,
-                XSTREAM_SERVER_NAME, SNAPSHOT_MODE);
         Field.group(config, "History Storage", KafkaDatabaseHistory.BOOTSTRAP_SERVERS,
                 KafkaDatabaseHistory.TOPIC, KafkaDatabaseHistory.RECOVERY_POLL_ATTEMPTS,
                 KafkaDatabaseHistory.RECOVERY_POLL_INTERVAL_MS, HistorizedRelationalDatabaseConnectorConfig.DATABASE_HISTORY);
         Field.group(config, "Events", RelationalDatabaseConnectorConfig.TABLE_WHITELIST,
                 RelationalDatabaseConnectorConfig.TABLE_BLACKLIST,
+                RelationalDatabaseConnectorConfig.MSG_KEY_COLUMNS,
                 RelationalDatabaseConnectorConfig.TABLE_IGNORE_BUILTIN,
-                Heartbeat.HEARTBEAT_INTERVAL, Heartbeat.HEARTBEAT_TOPICS_PREFIX
-        );
+                CommonConnectorConfig.PROVIDE_TRANSACTION_METADATA,
+                Heartbeat.HEARTBEAT_INTERVAL, Heartbeat.HEARTBEAT_TOPICS_PREFIX,
+                CommonConnectorConfig.EVENT_PROCESSING_FAILURE_HANDLING_MODE);
         Field.group(config, "Connector", CommonConnectorConfig.POLL_INTERVAL_MS, CommonConnectorConfig.MAX_BATCH_SIZE,
                 CommonConnectorConfig.MAX_QUEUE_SIZE, CommonConnectorConfig.SNAPSHOT_DELAY_MS);
 
@@ -191,7 +195,7 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
         return snapshotMode;
     }
 
-    public boolean  getTablenameCaseInsensitive() {
+    public boolean getTablenameCaseInsensitive() {
         return tablenameCaseInsensitive;
     }
 
@@ -199,7 +203,7 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
         return oracleVersion;
     }
 
-    public String getSchemaName(){
+    public String getSchemaName() {
         return schemaName;
     }
 
@@ -220,6 +224,59 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
         };
     }
 
+    public static enum OracleVersion implements EnumeratedValue {
+
+        V11("11"),
+        V12Plus("12+");
+
+        private final String version;
+
+        private OracleVersion(String version) {
+            this.version = version;
+        }
+
+        @Override
+        public String getValue() {
+            return version;
+        }
+
+        public int getPosVersion() {
+            switch (version) {
+                case "11":
+                    return XStreamUtility.POS_VERSION_V1;
+                case "12+":
+                    return XStreamUtility.POS_VERSION_V2;
+                default:
+                    return XStreamUtility.POS_VERSION_V2;
+            }
+        }
+
+        public static OracleVersion parse(String value) {
+            if (value == null) {
+                return null;
+            }
+            value = value.trim();
+
+            for (OracleVersion option : OracleVersion.values()) {
+                if (option.getValue().equalsIgnoreCase(value)) {
+                    return option;
+                }
+            }
+
+            return null;
+        }
+
+        public static OracleVersion parse(String value, String defaultValue) {
+            OracleVersion option = parse(value);
+
+            if (option == null && defaultValue != null) {
+                option = parse(defaultValue);
+            }
+
+            return option;
+        }
+    }
+
     /**
      * The set of predefined SnapshotMode options or aliases.
      */
@@ -232,8 +289,16 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
 
         /**
          * Perform a snapshot of the schema but no data upon initial startup of a connector.
+         *
+         * @deprecated to be removed in 1.1; use {@link #INITIAL_SCHEMA} instead.
          */
-        INITIAL_SCHEMA_ONLY("initial_schema_only", false);
+        @Deprecated
+        INITIAL_SCHEMA_ONLY("initial_schema_only", false),
+
+        /**
+         * Perform a snapshot of the schema but no data upon initial startup of a connector.
+         */
+        SCHEMA_ONLY("schema_only", false);
 
         private final String value;
         private final boolean includeData;
@@ -386,5 +451,31 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
     @Override
     public String getContextName() {
         return Module.contextName();
+    }
+
+    /**
+     * Validate the time.precision.mode configuration.
+     *
+     * If {@code adaptive} is specified, this option has the potential to cause overflow which is why the
+     * option was deprecated and no longer supported for this connector.
+     */
+    private static int validateSnapshotMode(Configuration config, Field field, ValidationOutput problems) {
+        if (config.hasKey(SNAPSHOT_MODE.name())) {
+            final String snapshotMode = config.getString(SNAPSHOT_MODE.name());
+            if (SnapshotMode.INITIAL_SCHEMA_ONLY.value.equals(snapshotMode)) {
+                // this will be logged as ERROR, but returning 0 doesn't prevent start-up
+                problems.accept(SNAPSHOT_MODE, snapshotMode,
+                        "The 'initial_schema_only' snapshot.mode is no longer supported and will be removed in a future revision. Use 'schema_only' instead.");
+                return 0;
+            }
+        }
+
+        // Everything checks out ok.
+        return 0;
+    }
+
+    @Override
+    public String getConnectorName() {
+        return Module.name();
     }
 }

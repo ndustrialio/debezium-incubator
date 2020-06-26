@@ -5,6 +5,15 @@
  */
 package io.debezium.connector.oracle.antlr.listener;
 
+import static io.debezium.antlr.AntlrDdlParser.getText;
+import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getColumnName;
+import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getTableName;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.antlr.v4.runtime.tree.ParseTreeListener;
+
 import io.debezium.connector.oracle.antlr.OracleDdlParser;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParserBaseListener;
@@ -13,14 +22,6 @@ import io.debezium.relational.ColumnEditor;
 import io.debezium.relational.TableEditor;
 import io.debezium.relational.TableId;
 import io.debezium.text.ParsingException;
-import org.antlr.v4.runtime.tree.ParseTreeListener;
-
-import java.util.ArrayList;
-import java.util.List;
-
-import static io.debezium.antlr.AntlrDdlParser.getText;
-import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getColumnName;
-import static io.debezium.connector.oracle.antlr.listener.ParserListenerUtils.getTableName;
 
 /**
  * Parser listener that is parsing Oracle ALTER TABLE statements
@@ -70,6 +71,7 @@ public class AlterTableParserListener extends PlSqlParserBaseListener {
         parser.runIfNotNull(() -> {
             listeners.remove(columnDefinitionParserListener);
             parser.databaseTables().overwriteTable(tableEditor.create());
+            // parser.signalAlterTable(tableEditor.tableId(), null, ctx.getParent());// todo?
         }, tableEditor);
         super.exitAlter_table(ctx);
     }
@@ -90,7 +92,6 @@ public class AlterTableParserListener extends PlSqlParserBaseListener {
         super.enterAdd_column_clause(ctx);
     }
 
-
     @Override
     public void exitAdd_column_clause(PlSqlParser.Add_column_clauseContext ctx) {
         parser.runIfNotNull(() -> {
@@ -109,7 +110,8 @@ public class AlterTableParserListener extends PlSqlParserBaseListener {
                 if (columnEditors.size() > parsingColumnIndex) {
                     // assign next column editor to parse another column definition
                     columnDefinitionParserListener.setColumnEditor(columnEditors.get(parsingColumnIndex++));
-                } else {
+                }
+                else {
                     // all columns parsed
                     // reset global variables for next parsed statement
                     columnEditors.forEach(columnEditor -> tableEditor.addColumn(columnEditor.create()));
@@ -126,7 +128,7 @@ public class AlterTableParserListener extends PlSqlParserBaseListener {
         parser.runIfNotNull(() -> {
             List<PlSqlParser.Column_nameContext> columnNameContexts = ctx.column_name();
             columnEditors = new ArrayList<>(columnNameContexts.size());
-            for (PlSqlParser.Column_nameContext columnNameContext : columnNameContexts){
+            for (PlSqlParser.Column_nameContext columnNameContext : columnNameContexts) {
                 String columnName = getColumnName(columnNameContext);
                 tableEditor.removeColumn(columnName);
             }

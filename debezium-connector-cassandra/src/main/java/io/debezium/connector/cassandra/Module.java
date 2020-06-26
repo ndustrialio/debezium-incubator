@@ -5,9 +5,9 @@
  */
 package io.debezium.connector.cassandra;
 
-import io.debezium.util.IoUtil;
-
 import java.util.Properties;
+
+import io.debezium.util.IoUtil;
 
 /**
  * Information about this module.
@@ -16,12 +16,15 @@ public final class Module {
 
     private static final Properties INFO = IoUtil.loadProperties(Module.class, "io/debezium/connector/cassandra/build.version");
 
-
     public static String version() {
         return INFO.getProperty("version");
     }
 
     public static String name() {
         return "cassandra";
+    }
+
+    public static String contextName() {
+        return "Cassandra";
     }
 }

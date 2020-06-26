@@ -5,14 +5,16 @@
  */
 package io.debezium.connector.cassandra;
 
-import org.junit.Test;
+import static org.junit.Assert.assertEquals;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.assertEquals;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.when;
+import org.junit.Test;
+
+import io.debezium.config.Configuration;
 
 public class CommitLogPostProcessorTest extends EmbeddedCassandraConnectorTestBase {
 
@@ -28,12 +30,13 @@ public class CommitLogPostProcessorTest extends EmbeddedCassandraConnectorTestBa
             public void onSuccessTransfer(File file) {
                 archivedFileCount.incrementAndGet();
             }
+
             @Override
             public void onErrorTransfer(File file) {
                 errorFileCount.incrementAndGet();
             }
         };
-        CassandraConnectorConfig config = spy(new CassandraConnectorConfig(generateDefaultConfigMap()));
+        CassandraConnectorConfig config = spy(new CassandraConnectorConfig(Configuration.from(generateDefaultConfigMap())));
         when(config.getCommitLogTransfer()).thenReturn(myTransfer);
         CassandraConnectorContext context = new CassandraConnectorContext(config);
         CommitLogPostProcessor postProcessor = spy(new CommitLogPostProcessor(context));

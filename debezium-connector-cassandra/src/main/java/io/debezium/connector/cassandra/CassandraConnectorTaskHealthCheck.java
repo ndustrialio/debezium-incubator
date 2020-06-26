@@ -5,12 +5,12 @@
  */
 package io.debezium.connector.cassandra;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import com.codahale.metrics.health.HealthCheck;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-import java.util.HashMap;
-import java.util.Map;
 
 public class CassandraConnectorTaskHealthCheck extends HealthCheck {
     private static final ObjectMapper mapper = new ObjectMapper();
@@ -26,7 +26,8 @@ public class CassandraConnectorTaskHealthCheck extends HealthCheck {
     protected Result check() throws Exception {
         if (isHealthy()) {
             return Result.healthy(getMessage());
-        } else {
+        }
+        else {
             return Result.unhealthy(getMessage());
         }
     }

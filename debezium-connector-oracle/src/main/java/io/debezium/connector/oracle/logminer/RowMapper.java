@@ -5,15 +5,17 @@
  */
 package io.debezium.connector.oracle.logminer;
 
-import io.debezium.relational.TableId;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import javax.xml.bind.DatatypeConverter;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+
+import javax.xml.bind.DatatypeConverter;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.debezium.relational.TableId;
 
 /**
  * A utility class to map LogMiner content resultset values
@@ -22,7 +24,7 @@ public class RowMapper {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RowMapper.class);
 
-    //operations
+    // operations
     public static final int INSERT = 1;
     public static final int DELETE = 2;
     public static final int UPDATE = 3;
@@ -34,7 +36,7 @@ public class RowMapper {
     private static final int COMMIT_SCN = 2;
     private static final int OPERATION = 3;
     private static final int USER_NAME = 4;
-    private static final int PDB_NAME = 5;  //containerized DB
+    private static final int PDB_NAME = 5; // containerized DB
     private static final int SQL_REDO = 6;
     private static final int OPERATION_CODE = 9;
     private static final int TABLE_NAME = 10;
@@ -44,7 +46,6 @@ public class RowMapper {
     private static final int SEG_OWNER = 16;
     private static final int SEG_NAME = 17;
     private static final int SEQUENCE = 18;
-
 
     public static int getOperationCode(ResultSet rs) throws SQLException {
         return rs.getInt(OPERATION_CODE);
@@ -97,9 +98,10 @@ public class RowMapper {
         // the next row returned by the ResultSet
         if (csf == 0) {
             return rs.getString(SQL_REDO);
-        } else {
+        }
+        else {
             final StringBuilder result = new StringBuilder(rs.getString(SQL_REDO));
-            int lobLimit = 10000;// todo : decide on approach ( XStream chunk option) and Lob limit
+            int lobLimit = 10000; // todo : decide on approach ( XStream chunk option) and Lob limit
             BigDecimal scn = getScn(rs);
             while (csf == 1) {
                 rs.next();

@@ -5,6 +5,11 @@
  */
 package io.debezium.connector.oracle.antlr.listener;
 
+import static io.debezium.antlr.AntlrDdlParser.getText;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
 import io.debezium.connector.oracle.antlr.OracleDmlParser;
 import io.debezium.connector.oracle.logminer.valueholder.ColumnValueHolder;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
@@ -14,11 +19,6 @@ import io.debezium.data.Envelope;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
 import io.debezium.relational.Column;
 import io.debezium.text.ParsingException;
-
-import java.util.List;
-import java.util.stream.Collectors;
-
-import static io.debezium.antlr.AntlrDdlParser.getText;
 
 /**
  * This class parses UPDATE statements.
@@ -83,7 +83,7 @@ public class UpdateParserListener extends BaseDmlStringParserListener {
         if ("null".equalsIgnoreCase(nullValue)) {
             value = nullValue;
         }
-       Object stripedValue = removeApostrophes(value);
+        Object stripedValue = removeApostrophes(value);
 
         Column column = table.columnWithName(stripedName);
         Object valueObject = convertValueToSchemaType(column, stripedValue, converter);

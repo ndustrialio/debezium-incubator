@@ -5,17 +5,16 @@
  */
 package io.debezium.connector.oracle;
 
-import io.debezium.connector.oracle.util.TestHelper;
-import io.debezium.relational.RelationalDatabaseConnectorConfig;
-import org.junit.BeforeClass;
-import org.junit.Test;
-
 import java.sql.SQLException;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.temporal.ChronoField;
+
+import org.junit.BeforeClass;
+import org.junit.Test;
+
+import io.debezium.connector.oracle.util.TestHelper;
+import io.debezium.relational.RelationalDatabaseConnectorConfig;
 
 /**
  * This subclasses common OracleConnectorIT for LogMiner adaptor
@@ -64,14 +63,14 @@ public class LogMinerOracleConnectorIT extends OracleConnectorIT {
 
     }
 
-    @Test   //todo failing DDL parsing not functional yet
+    @Test // todo failing DDL parsing not functional yet
     public void shouldReadChangeStreamForTableCreatedWhileStreaming() throws Exception {
-        //super.shouldReadChangeStreamForTableCreatedWhileStreaming();
+        // super.shouldReadChangeStreamForTableCreatedWhileStreaming();
     }
 
-    @Test //todo failing DDL parsing not functional yet
+    @Test // todo failing DDL parsing not functional yet
     public void shouldReceiveHeartbeatAlsoWhenChangingNonWhitelistedTable() throws Exception {
-        //super.shouldReceiveHeartbeatAlsoWhenChangingNonWhitelistedTable();
+        // super.shouldReceiveHeartbeatAlsoWhenChangingNonWhitelistedTable();
     }
 
     /**
@@ -80,13 +79,15 @@ public class LogMinerOracleConnectorIT extends OracleConnectorIT {
      * @return
      */
     private DateTimeFormatter dateTimeFormatter(int length) {
-       /* final DateTimeFormatterBuilder dtf = new DateTimeFormatterBuilder().parseCaseInsensitive()
-                .appendPattern("dd-MMM-yy hh.mm.ss.SSSSSS a");
-        if (length != -1) {
-                  dtf.appendFraction(ChronoField.MICRO_OF_SECOND, 0, length, true);
-              }
-        return dtf.toFormatter();*/
-         return new DateTimeFormatterBuilder()
+        /*
+         * final DateTimeFormatterBuilder dtf = new DateTimeFormatterBuilder().parseCaseInsensitive()
+         * .appendPattern("dd-MMM-yy hh.mm.ss.SSSSSS a");
+         * if (length != -1) {
+         * dtf.appendFraction(ChronoField.MICRO_OF_SECOND, 0, length, true);
+         * }
+         * return dtf.toFormatter();
+         */
+        return new DateTimeFormatterBuilder()
                 .parseCaseInsensitive()
                 .appendPattern("yyyy-MM-dd HH:mm:ss")
                 .optionalStart()

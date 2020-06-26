@@ -12,14 +12,15 @@ import java.sql.Timestamp;
  */
 public interface LogMinerLcr {
 
-/*
+    /*
      * The position of the LCR identifies its placement in the stream of LCR in a transaction.
      * SCN (system change number) could be converted to a position in the code, based on the Oracle version
+     * 
      * @return position
      *//*
-
-    byte[] getPosition(); // todo maybe we still need it?
-*/
+        * 
+        * byte[] getPosition(); // todo maybe we still need it?
+        */
 
     /**
      * @return transaction ID
@@ -68,6 +69,5 @@ public interface LogMinerLcr {
      * @param id unique transaction ID
      */
     void setTransactionId(String id);
-
 
 }

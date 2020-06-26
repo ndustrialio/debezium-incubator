@@ -5,29 +5,33 @@
  */
 package io.debezium.connector.cassandra.network;
 
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
+import java.util.Properties;
+
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.TrustManagerFactory;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import io.debezium.connector.cassandra.exceptions.CassandraConnectorConfigException;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.yaml.snakeyaml.Yaml;
-
-import javax.net.ssl.KeyManagerFactory;
-import javax.net.ssl.TrustManagerFactory;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.security.GeneralSecurityException;
-import java.security.KeyStore;
 
 public class SslContextFactory {
     private static final Logger LOGGER = LoggerFactory.getLogger(SslContextFactory.class);
-    private SslContextFactory() { }
+
+    private SslContextFactory() {
+    }
 
     /**
      * Return an {@link SslContext} containing all SSL configurations parsed
-     * from the YAML file path
+     * from the Properties file path
      * <p>
      * See {@link SslConfig} class for a list of valid config names
      *
@@ -38,9 +42,11 @@ public class SslContextFactory {
         if (sslConfigPath == null) {
             throw new CassandraConnectorConfigException("Please specify SSL config path in cdc.yml");
         }
-        Yaml yaml = new Yaml();
+        Properties props = new Properties();
         try (FileInputStream fis = new FileInputStream(sslConfigPath)) {
-            SslConfig sslConfig = new SslConfig(yaml.load(fis));
+            props.load(fis);
+            fis.close();
+            SslConfig sslConfig = new SslConfig(props);
             return createSslContext(sslConfig);
         }
     }
@@ -53,7 +59,8 @@ public class SslContextFactory {
                 KeyStore keyStore = KeyStore.getInstance(config.keyStoreType());
                 try (FileInputStream is = new FileInputStream(config.keyStoreLocation())) {
                     keyStore.load(is, config.keyStorePassword().toCharArray());
-                } catch (IOException ex) {
+                }
+                catch (IOException ex) {
                     LOGGER.error("failed to load the key store: location=" + config.keyStoreLocation() + " type=" + config.keyStoreType());
                     throw ex;
                 }
@@ -63,7 +70,8 @@ public class SslContextFactory {
                 builder = SslContextBuilder.forClient();
                 builder.keyManager(keyManagerFactory);
 
-            } else {
+            }
+            else {
                 LOGGER.error("KeyStoreLocation was not specified. Building SslContext without certificate. This is not suitable for PRODUCTION");
                 final SelfSignedCertificate ssc = new SelfSignedCertificate();
 
@@ -74,7 +82,8 @@ public class SslContextFactory {
                 KeyStore trustStore = KeyStore.getInstance(config.trustStoreType());
                 try (FileInputStream is = new FileInputStream(config.trustStoreLocation())) {
                     trustStore.load(is, config.trustStorePassword().toCharArray());
-                } catch (IOException ex) {
+                }
+                catch (IOException ex) {
                     LOGGER.error("failed to load the trust store: location=" + config.trustStoreLocation() + " type=" + config.trustStoreType());
                     throw ex;
                 }
@@ -83,14 +92,16 @@ public class SslContextFactory {
 
                 builder.trustManager(trustManagerFactory);
 
-            } else {
+            }
+            else {
                 LOGGER.error("TrustStoreLocation was not specified. Building SslContext using InsecureTrustManagerFactory. This is not suitable for PRODUCTION");
                 builder.trustManager(InsecureTrustManagerFactory.INSTANCE);
             }
 
             return builder.build();
 
-        } catch (GeneralSecurityException | IOException e) {
+        }
+        catch (GeneralSecurityException | IOException e) {
             LOGGER.error("Failed to create SslContext", e);
             throw e;
         }

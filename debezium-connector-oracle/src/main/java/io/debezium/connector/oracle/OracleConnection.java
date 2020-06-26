@@ -5,19 +5,6 @@
  */
 package io.debezium.connector.oracle;
 
-import io.debezium.config.Configuration;
-import io.debezium.jdbc.JdbcConnection;
-import io.debezium.relational.Column;
-import io.debezium.relational.ColumnEditor;
-import io.debezium.relational.TableEditor;
-import io.debezium.relational.TableId;
-import io.debezium.relational.Tables;
-import io.debezium.relational.Tables.ColumnNameFilter;
-import io.debezium.relational.Tables.TableFilter;
-import oracle.jdbc.OracleTypes;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -29,6 +16,21 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.debezium.config.Configuration;
+import io.debezium.jdbc.JdbcConnection;
+import io.debezium.relational.Column;
+import io.debezium.relational.ColumnEditor;
+import io.debezium.relational.TableEditor;
+import io.debezium.relational.TableId;
+import io.debezium.relational.Tables;
+import io.debezium.relational.Tables.ColumnNameFilter;
+import io.debezium.relational.Tables.TableFilter;
+
+import oracle.jdbc.OracleTypes;
 
 public class OracleConnection extends JdbcConnection {
 
@@ -89,7 +91,8 @@ public class OracleConnection extends JdbcConnection {
 
     @Override
     public Set<TableId> readTableNames(String databaseCatalog, String schemaNamePattern, String tableNamePattern,
-            String[] tableTypes) throws SQLException {
+                                       String[] tableTypes)
+            throws SQLException {
 
         Set<TableId> tableIds = super.readTableNames(null, schemaNamePattern, tableNamePattern, tableTypes);
 
@@ -103,7 +106,7 @@ public class OracleConnection extends JdbcConnection {
         String query = "select table_name, owner from all_tables where table_name not in " +
                 "(select SDO_INDEX_TABLE from ALL_SDO_INDEX_INFO where SDO_INDEX_OWNER like '%" + schemaNamePattern.toUpperCase() + "%')" +
                 "and owner like '%" + schemaNamePattern.toUpperCase() + "%'";
-        if (isView){
+        if (isView) {
             query = "select view_name, owner from all_views where owner like '%" + schemaNamePattern.toUpperCase() + "%'";
         }
         Set<TableId> tableIds = new HashSet<>();
@@ -115,7 +118,8 @@ public class OracleConnection extends JdbcConnection {
                 TableId tableId = new TableId(catalogName, schemaName, tableName);
                 tableIds.add(tableId);
             }
-        } finally {
+        }
+        finally {
             LOGGER.trace("TableIds are: {}", tableIds);
         }
         return tableIds;
@@ -127,9 +131,9 @@ public class OracleConnection extends JdbcConnection {
     }
 
     // todo replace metadata with something like this
-    private ResultSet getTableColumnsInfo(String schemaNamePattern, String tableName) throws SQLException{
+    private ResultSet getTableColumnsInfo(String schemaNamePattern, String tableName) throws SQLException {
         String columnQuery = "select column_name, DATA_TYPE, data_length, data_precision, data_scale, default_length, density, char_length from " +
-                "all_tab_columns where owner like '" + schemaNamePattern + "' AND table_name='"+tableName+"'";
+                "all_tab_columns where owner like '" + schemaNamePattern + "' AND table_name='" + tableName + "'";
 
         PreparedStatement statement = connection().prepareStatement(columnQuery);
         return statement.executeQuery();
@@ -137,7 +141,8 @@ public class OracleConnection extends JdbcConnection {
 
     @Override
     public void readSchema(Tables tables, String databaseCatalog, String schemaNamePattern, TableFilter tableFilter,
-            ColumnNameFilter columnFilter, boolean removeTablesNotFoundInJdbc) throws SQLException {
+                           ColumnNameFilter columnFilter, boolean removeTablesNotFoundInJdbc)
+            throws SQLException {
 
         super.readSchema(tables, null, schemaNamePattern, null, columnFilter, removeTablesNotFoundInJdbc);
 
@@ -158,23 +163,21 @@ public class OracleConnection extends JdbcConnection {
                     if (column.jdbcType() == Types.TIMESTAMP) {
                         editor.addColumn(
                                 column.edit()
-                                    .length(column.scale().orElse(Column.UNSET_INT_VALUE))
-                                    .scale(null)
-                                    .create()
-                                );
+                                        .length(column.scale().orElse(Column.UNSET_INT_VALUE))
+                                        .scale(null)
+                                        .create());
                     }
                     // NUMBER columns without scale value have it set to -127 instead of null;
                     // let's rectify that
                     else if (column.jdbcType() == OracleTypes.NUMBER) {
                         column.scale()
-                            .filter(s -> s == ORACLE_UNSET_SCALE)
-                            .ifPresent(s -> {
-                                editor.addColumn(
-                                        column.edit()
-                                            .scale(null)
-                                            .create()
-                                        );
-                            });
+                                .filter(s -> s == ORACLE_UNSET_SCALE)
+                                .ifPresent(s -> {
+                                    editor.addColumn(
+                                            column.edit()
+                                                    .scale(null)
+                                                    .create());
+                                });
                     }
                 }
                 tables.overwriteTable(editor.create());

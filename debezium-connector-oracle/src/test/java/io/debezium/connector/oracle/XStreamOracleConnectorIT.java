@@ -5,12 +5,13 @@
  */
 package io.debezium.connector.oracle;
 
-import io.debezium.connector.oracle.util.TestHelper;
-import io.debezium.relational.RelationalDatabaseConnectorConfig;
+import java.sql.SQLException;
+
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.sql.SQLException;
+import io.debezium.connector.oracle.util.TestHelper;
+import io.debezium.relational.RelationalDatabaseConnectorConfig;
 
 /**
  * This class subclasses OracleConnectorIT tests for XStream adapter
@@ -54,7 +55,7 @@ public class XStreamOracleConnectorIT extends OracleConnectorIT {
 
     @Test
     public void shouldReadChangeStreamForExistingTable() throws Exception {
-    super.shouldReadChangeStreamForExistingTable(1000L);
+        super.shouldReadChangeStreamForExistingTable(1000L);
     }
 
     @Test

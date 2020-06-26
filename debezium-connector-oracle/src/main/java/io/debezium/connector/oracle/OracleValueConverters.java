@@ -5,9 +5,24 @@
  */
 package io.debezium.connector.oracle;
 
+import static io.debezium.util.NumberConversions.BYTE_FALSE;
+
+import java.math.BigDecimal;
+import java.sql.SQLException;
+import java.sql.Types;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.apache.kafka.connect.data.Field;
+import org.apache.kafka.connect.data.SchemaBuilder;
+
 import io.debezium.data.SpecialValueDecimal;
 import io.debezium.data.VariableScaleDecimal;
 import io.debezium.jdbc.JdbcValueConverters;
+import io.debezium.jdbc.JdbcValueConverters.DecimalMode;
+import io.debezium.jdbc.TemporalPrecisionMode;
 import io.debezium.relational.Column;
 import io.debezium.relational.ValueConverter;
 import io.debezium.time.Date;
@@ -15,10 +30,10 @@ import io.debezium.time.MicroDuration;
 import io.debezium.time.ZonedTimestamp;
 import io.debezium.util.NumberConversions;
 import io.debezium.util.Strings;
+
 import oracle.jdbc.OracleTypes;
 import oracle.sql.BINARY_DOUBLE;
 import oracle.sql.BINARY_FLOAT;
-import oracle.sql.BLOB;
 import oracle.sql.CHAR;
 import oracle.sql.CLOB;
 import oracle.sql.DATE;
@@ -28,17 +43,6 @@ import oracle.sql.NUMBER;
 import oracle.sql.TIMESTAMP;
 import oracle.sql.TIMESTAMPLTZ;
 import oracle.sql.TIMESTAMPTZ;
-import org.apache.kafka.connect.data.Field;
-import org.apache.kafka.connect.data.SchemaBuilder;
-
-import java.math.BigDecimal;
-import java.sql.SQLException;
-import java.sql.Types;
-import java.time.ZonedDateTime;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-import static io.debezium.util.NumberConversions.BYTE_FALSE;
 
 public class OracleValueConverters extends JdbcValueConverters {
 
@@ -46,7 +50,8 @@ public class OracleValueConverters extends JdbcValueConverters {
 
     private final OracleConnection connection;
 
-    public OracleValueConverters(OracleConnection connection) {
+    public OracleValueConverters(OracleConnectorConfig config, OracleConnection connection) {
+        super(config.getDecimalMode(), TemporalPrecisionMode.ADAPTIVE, ZoneOffset.UTC, null, null, null);
         this.connection = connection;
     }
 
@@ -57,13 +62,12 @@ public class OracleValueConverters extends JdbcValueConverters {
                 column.jdbcType(),
                 column.typeName(),
                 column.length(),
-                column.scale()
-        );
+                column.scale());
 
         switch (column.jdbcType()) {
             // Oracle's float is not float as in Java but a NUMERIC without scale
-            //case Types.FLOAT:
-            //    return VariableScaleDecimal.builder();
+            case Types.FLOAT:
+                return variableScaleSchema(column);
             case Types.NUMERIC:
                 return getNumericSchema(column);
             case OracleTypes.BINARY_FLOAT:
@@ -116,13 +120,20 @@ public class OracleValueConverters extends JdbcValueConverters {
             return super.schemaBuilder(column);
         }
         else {
+            return variableScaleSchema(column);
+        }
+    }
+
+    private SchemaBuilder variableScaleSchema(Column column) {
+        if (decimalMode == DecimalMode.PRECISE) {
             return VariableScaleDecimal.builder();
         }
+        return SpecialValueDecimal.builder(decimalMode, column.length(), column.scale().orElse(-1));
     }
 
     @Override
     public ValueConverter converter(Column column, Field fieldDefn) {
-        switch(column.jdbcType()) {
+        switch (column.jdbcType()) {
             case Types.CHAR:
             case Types.VARCHAR:
             case Types.NCHAR:
@@ -135,7 +146,7 @@ public class OracleValueConverters extends JdbcValueConverters {
             case OracleTypes.BINARY_DOUBLE:
                 return data -> convertDouble(column, fieldDefn, data);
             case Types.NUMERIC:
-                    return getNumericConverter(column, fieldDefn);
+                return getNumericConverter(column, fieldDefn);
             case Types.FLOAT:
                 return data -> convertDouble(column, fieldDefn, data);
             case OracleTypes.TIMESTAMPTZ:
@@ -162,7 +173,7 @@ public class OracleValueConverters extends JdbcValueConverters {
             Integer scale = column.scale().get();
 
             if (scale <= 0) {
-                //Boolean represtented as Number(1,0)
+                // Boolean represtented as Number(1,0)
                 if (scale == 0 && column.length() == 1) {
                     return data -> convertBoolean(column, fieldDefn, data);
                 }
@@ -271,14 +282,6 @@ public class OracleValueConverters extends JdbcValueConverters {
         return super.convertDecimal(column, fieldDefn, data);
     }
 
-    private BigDecimal withScaleAdjustedIfNeeded(Column column, BigDecimal data) {
-        if (column.scale().isPresent() && column.scale().get() > data.scale()) {
-            data = data.setScale(column.scale().get());
-        }
-
-        return data;
-    }
-
     @Override
     protected Object convertNumeric(Column column, Field fieldDefn, Object data) {
         return convertDecimal(column, fieldDefn, data);
@@ -349,11 +352,10 @@ public class OracleValueConverters extends JdbcValueConverters {
     protected Object convertBoolean(Column column, Field fieldDefn, Object data) {
 
         if (data instanceof BigDecimal) {
-            return ((BigDecimal) data).byteValue() == 0 ? Boolean.FALSE :Boolean.TRUE;
+            return ((BigDecimal) data).byteValue() == 0 ? Boolean.FALSE : Boolean.TRUE;
         }
         return super.convertBoolean(column, fieldDefn, data);
     }
-
 
     @Override
     protected Object convertTinyInt(Column column, Field fieldDefn, Object data) {
@@ -381,11 +383,16 @@ public class OracleValueConverters extends JdbcValueConverters {
             return null;
         }
         // TODO Need to handle special values, it is not supported in variable scale decimal
-        else if (data instanceof SpecialValueDecimal) {
-            return VariableScaleDecimal.fromLogical(fieldDefn.schema(), (SpecialValueDecimal) data);
+        if (decimalMode == DecimalMode.PRECISE) {
+            if (data instanceof SpecialValueDecimal) {
+                return VariableScaleDecimal.fromLogical(fieldDefn.schema(), (SpecialValueDecimal) data);
+            }
+            else if (data instanceof BigDecimal) {
+                return VariableScaleDecimal.fromLogical(fieldDefn.schema(), new SpecialValueDecimal((BigDecimal) data));
+            }
         }
-        else if (data instanceof BigDecimal) {
-            return VariableScaleDecimal.fromLogical(fieldDefn.schema(), new SpecialValueDecimal((BigDecimal) data));
+        else {
+            return data;
         }
         return handleUnknownData(column, fieldDefn, data);
     }
@@ -404,8 +411,8 @@ public class OracleValueConverters extends JdbcValueConverters {
             }
             else if (data instanceof TIMESTAMPLTZ) {
                 // JDBC driver throws an exception
-//                final TIMESTAMPLTZ ts = (TIMESTAMPLTZ)data;
-//                data = ts.offsetDateTimeValue(connection.connection());
+                // final TIMESTAMPLTZ ts = (TIMESTAMPLTZ)data;
+                // data = ts.offsetDateTimeValue(connection.connection());
                 return null;
             }
         }
@@ -418,8 +425,8 @@ public class OracleValueConverters extends JdbcValueConverters {
     @Override
     protected Object convertTimestampToEpochMicros(Column column, Field fieldDefn, Object data) {
         if (data instanceof Long) {
-              //return  org.apache.kafka.connect.data.Timestamp.toLogical(Timestamp.SCHEMA, (Long)data);
-              return data;
+            // return org.apache.kafka.connect.data.Timestamp.toLogical(Timestamp.SCHEMA, (Long)data);
+            return data;
         }
         return super.convertTimestampToEpochMicros(column, fieldDefn, fromOracleTimeClasses(column, data));
     }
@@ -440,10 +447,10 @@ public class OracleValueConverters extends JdbcValueConverters {
     }
 
     protected Object convertIntervalYearMonth(Column column, Field fieldDefn, Object data) {
-        return convertValue(column, fieldDefn, data, NumberConversions.DOUBLE_FALSE, (r) -> {
+        return convertValue(column, fieldDefn, data, NumberConversions.LONG_FALSE, (r) -> {
             if (data instanceof Number) {
                 // we expect to get back from the plugin a double value
-                r.deliver(((Number) data).doubleValue());
+                r.deliver(((Number) data).longValue());
             }
             else if (data instanceof INTERVALYM) {
                 final String interval = ((INTERVALYM) data).stringValue();
@@ -466,10 +473,10 @@ public class OracleValueConverters extends JdbcValueConverters {
     }
 
     protected Object convertIntervalDaySecond(Column column, Field fieldDefn, Object data) {
-        return convertValue(column, fieldDefn, data, NumberConversions.DOUBLE_FALSE, (r) -> {
+        return convertValue(column, fieldDefn, data, NumberConversions.LONG_FALSE, (r) -> {
             if (data instanceof Number) {
                 // we expect to get back from the plugin a double value
-                r.deliver(((Number) data).doubleValue());
+                r.deliver(((Number) data).longValue());
             }
             else if (data instanceof INTERVALDS) {
                 final String interval = ((INTERVALDS) data).stringValue();

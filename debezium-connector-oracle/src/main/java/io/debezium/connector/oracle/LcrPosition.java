@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
  */
-package io.debezium.connector.oracle.xstream;
+package io.debezium.connector.oracle;
 
 import java.sql.SQLException;
 import java.util.Arrays;
@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import io.debezium.util.HexConverter;
 import io.debezium.util.Strings;
+
 import oracle.streams.StreamsException;
 import oracle.streams.XStreamUtility;
 

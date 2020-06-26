@@ -5,15 +5,15 @@
  */
 package io.debezium.connector.oracle;
 
-import io.debezium.connector.oracle.antlr.OracleDdlParser;
-import io.debezium.relational.Tables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.debezium.connector.oracle.antlr.OracleDdlParser;
 import io.debezium.relational.HistorizedRelationalDatabaseSchema;
 import io.debezium.relational.Table;
 import io.debezium.relational.TableId;
 import io.debezium.relational.TableSchemaBuilder;
+import io.debezium.relational.Tables;
 import io.debezium.relational.ddl.DdlParser;
 import io.debezium.relational.history.TableChanges;
 import io.debezium.schema.SchemaChangeEvent;
@@ -30,18 +30,17 @@ public class OracleDatabaseSchema extends HistorizedRelationalDatabaseSchema {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(OracleDatabaseSchema.class);
 
-    public OracleDatabaseSchema(OracleConnectorConfig connectorConfig, SchemaNameAdjuster schemaNameAdjuster, TopicSelector<TableId> topicSelector, OracleConnection connection) {
+    public OracleDatabaseSchema(OracleConnectorConfig connectorConfig, SchemaNameAdjuster schemaNameAdjuster, TopicSelector<TableId> topicSelector,
+                                OracleConnection connection) {
         super(connectorConfig, topicSelector, connectorConfig.getTableFilters().dataCollectionFilter(), null,
                 new TableSchemaBuilder(
-                        new OracleValueConverters(connection),
+                        new OracleValueConverters(connectorConfig, connection),
                         schemaNameAdjuster,
-                        connectorConfig.getSourceInfoStructMaker().schema()),
-                connectorConfig.getTablenameCaseInsensitive()
-        );
-    }
-
-    public Tables getTables(){
-        return tables();
+                        connectorConfig.customConverterRegistry(),
+                        connectorConfig.getSourceInfoStructMaker().schema(),
+                        connectorConfig.getSanitizeFieldNames()),
+                connectorConfig.getTablenameCaseInsensitive(),
+                connectorConfig.getKeyMapper());
     }
 
     @Override
@@ -65,5 +64,9 @@ public class OracleDatabaseSchema extends HistorizedRelationalDatabaseSchema {
         }
 
         record(schemaChange, tableChanges);
+    }
+
+    public Tables getTables() {
+        return tables();
     }
 }

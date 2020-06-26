@@ -5,24 +5,20 @@
  */
 package io.debezium.connector.cassandra;
 
-import io.debezium.connector.cassandra.transforms.CassandraTypeToAvroSchemaMapper;
-import org.apache.avro.Schema;
-import org.apache.avro.SchemaBuilder;
-import org.apache.avro.generic.GenericRecord;
-import org.apache.avro.generic.GenericRecordBuilder;
-
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
-import static io.debezium.connector.cassandra.Record.SOURCE;
+import io.debezium.config.CommonConnectorConfig;
+import io.debezium.connector.AbstractSourceInfo;
+import io.debezium.connector.SnapshotRecord;
+import io.debezium.time.Conversions;
 
 /**
  * Metadata about the source of the change event
  */
-public class SourceInfo implements AvroRecord {
-    public static final String DEBEZIUM_VERSION_KEY = "version";
-    public static final String DEBEZIUM_CONNECTOR_KEY = "connector";
+public class SourceInfo extends AbstractSourceInfo {
     public static final String CLUSTER_KEY = "cluster";
     public static final String COMMITLOG_FILENAME_KEY = "file";
     public static final String COMMITLOG_POSITION_KEY = "pos";
@@ -31,47 +27,22 @@ public class SourceInfo implements AvroRecord {
     public static final String SNAPSHOT_KEY = "snapshot";
     public static final String TIMESTAMP_KEY = "ts_micro";
 
-    public static final Schema SOURCE_SCHEMA = SchemaBuilder.builder().record(SOURCE).fields()
-            .requiredString(DEBEZIUM_VERSION_KEY)
-            .requiredString(DEBEZIUM_CONNECTOR_KEY)
-            .requiredString(CLUSTER_KEY)
-            .requiredString(COMMITLOG_FILENAME_KEY)
-            .requiredInt(COMMITLOG_POSITION_KEY)
-            .requiredBoolean(SNAPSHOT_KEY)
-            .requiredString(KEYSPACE_NAME_KEY)
-            .requiredString(TABLE_NAME_KEY)
-            .name(TIMESTAMP_KEY).type(CassandraTypeToAvroSchemaMapper.TIMESTAMP_MICRO_TYPE).noDefault()
-            .endRecord();
-
     public final String version = Module.version();
     public final String connector = Module.name();
-    public final String cluster;
-    public final OffsetPosition offsetPosition;
-    public final KeyspaceTable keyspaceTable;
-    public final boolean snapshot;
-    public final long tsMicro;
+    public String cluster;
+    public OffsetPosition offsetPosition;
+    public KeyspaceTable keyspaceTable;
+    public boolean snapshot;
+    public Instant tsMicro;
 
-    public SourceInfo(String cluster, OffsetPosition offsetPosition, KeyspaceTable keyspaceTable, boolean snapshot, long tsMicro) {
+    public SourceInfo(CommonConnectorConfig config, String cluster, OffsetPosition offsetPosition,
+                      KeyspaceTable keyspaceTable, boolean snapshot, Instant tsMicro) {
+        super(config);
         this.cluster = cluster;
         this.offsetPosition = offsetPosition;
         this.keyspaceTable = keyspaceTable;
         this.tsMicro = tsMicro;
         this.snapshot = snapshot;
-    }
-
-    @Override
-    public GenericRecord record(Schema schema) {
-        return new GenericRecordBuilder(schema)
-                .set(DEBEZIUM_VERSION_KEY, version)
-                .set(DEBEZIUM_CONNECTOR_KEY, connector)
-                .set(CLUSTER_KEY, cluster)
-                .set(COMMITLOG_FILENAME_KEY, offsetPosition.fileName)
-                .set(COMMITLOG_POSITION_KEY, offsetPosition.filePosition)
-                .set(SNAPSHOT_KEY, snapshot)
-                .set(KEYSPACE_NAME_KEY, keyspaceTable.keyspace)
-                .set(TABLE_NAME_KEY, keyspaceTable.table)
-                .set(TIMESTAMP_KEY, tsMicro)
-                .build();
     }
 
     @Override
@@ -89,12 +60,12 @@ public class SourceInfo implements AvroRecord {
                 && offsetPosition == that.offsetPosition
                 && snapshot == that.snapshot
                 && keyspaceTable == that.keyspaceTable
-                && tsMicro == that.tsMicro;
+                && this.tsMicroInLong() == that.tsMicroInLong();
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(cluster, snapshot, offsetPosition, keyspaceTable, tsMicro);
+        return Objects.hash(cluster, snapshot, offsetPosition, keyspaceTable, tsMicroInLong());
     }
 
     @Override
@@ -108,7 +79,27 @@ public class SourceInfo implements AvroRecord {
         map.put(COMMITLOG_POSITION_KEY, offsetPosition.filePosition);
         map.put(KEYSPACE_NAME_KEY, keyspaceTable.keyspace);
         map.put(TABLE_NAME_KEY, keyspaceTable.table);
-        map.put(TIMESTAMP_KEY, tsMicro);
+        map.put(TIMESTAMP_KEY, tsMicroInLong());
         return map.toString();
+    }
+
+    @Override
+    protected Instant timestamp() {
+        return tsMicro;
+    }
+
+    protected long tsMicroInLong() {
+        return Conversions.toEpochMicros(tsMicro);
+    }
+
+    @Override
+    protected SnapshotRecord snapshot() {
+        return snapshot ? SnapshotRecord.TRUE : SnapshotRecord.FALSE;
+    }
+
+    @Override
+    protected String database() {
+        // Set the database field in SourceInfo to be "NULL" because Cassandra doesn't have the conception of database.
+        return "NULL";
     }
 }

@@ -5,9 +5,7 @@
  */
 package io.debezium.connector.cassandra;
 
-import io.debezium.connector.cassandra.exceptions.CassandraConnectorDataException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -15,7 +13,10 @@ import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.debezium.connector.cassandra.exceptions.CassandraConnectorDataException;
 
 /**
  * Utility class used by the {@link CommitLogProcessor} to compare/delete commit log files.
@@ -25,7 +26,8 @@ public final class CommitLogUtil {
 
     private static final Pattern FILENAME_REGEX_PATTERN = Pattern.compile("CommitLog-\\d+-(\\d+).log");
 
-    private CommitLogUtil() { }
+    private CommitLogUtil() {
+    }
 
     /**
      * Move a commit log to a new directory. If the commit log already exists in the new directory, it woull be replaced.
@@ -38,7 +40,8 @@ public final class CommitLogUtil {
             }
 
             Files.move(file.toPath(), toDir.resolve(file.getName()), REPLACE_EXISTING);
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             LOGGER.error("Failed to move the file {} from {}", file.getName(), toDir.getFileName(), e);
         }
     }
@@ -55,7 +58,8 @@ public final class CommitLogUtil {
 
             Files.delete(file.toPath());
             LOGGER.debug("Deleted commit log {} in cdc directory", file.getName());
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             LOGGER.error("Failed to delete the file {} from cdc directory: ", file.getName(), e);
         }
     }
@@ -65,6 +69,10 @@ public final class CommitLogUtil {
      * If the directory does not contain any commit logs, an empty array is returned.
      */
     public static File[] getCommitLogs(File directory) {
+        if (!directory.isDirectory()) {
+            throw new IllegalArgumentException("Given directory does not exist: " + directory);
+        }
+
         return directory.listFiles(f -> f.isFile() && FILENAME_REGEX_PATTERN.matcher(f.getName()).matches());
     }
 

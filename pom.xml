@@ -4,12 +4,12 @@
     <parent>
         <groupId>io.debezium</groupId>
         <artifactId>debezium-parent</artifactId>
-        <version>0.10.0.Beta3</version>
+        <version>1.2.0.CR2</version>
     </parent>
 
     <modelVersion>4.0.0</modelVersion>
     <artifactId>debezium-incubator-parent</artifactId>
-    <version>0.10.0-SNAPSHOT</version>
+    <version>1.2.0-SNAPSHOT</version>
     <name>Debezium Incubator Parent POM</name>
     <description>Parent POM for incubating connectors of Debezium, an open source change data capture platform</description>
     <packaging>pom</packaging>
@@ -25,9 +25,9 @@
         <!-- Dependencies -->
         <version.dropwizard>4.0.1</version.dropwizard>
         <!-- Databases -->
-        <version.oracle.driver>12.1.0.2</version.oracle.driver>
+        <version.oracle.driver>12.2.0.1</version.oracle.driver>
         <version.cassandra.driver>3.5.0</version.cassandra.driver>
-
+        <version.db2.driver>11.5.0.0</version.db2.driver>
         <!-- Debezium parent -->
         <version.debezium>${project.version}</version.debezium>
     </properties>
@@ -43,6 +43,11 @@
             <dependency>
                 <groupId>io.debezium</groupId>
                 <artifactId>debezium-connector-cassandra</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.debezium</groupId>
+                <artifactId>debezium-connector-db2</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -81,6 +86,7 @@
 
     <modules>
         <module>debezium-connector-cassandra</module>
+        <module>debezium-connector-db2</module>
     </modules>
 
     <build>

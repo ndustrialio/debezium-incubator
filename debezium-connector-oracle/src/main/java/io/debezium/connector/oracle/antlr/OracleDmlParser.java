@@ -5,6 +5,10 @@
  */
 package io.debezium.connector.oracle.antlr;
 
+import org.antlr.v4.runtime.CharStream;
+import org.antlr.v4.runtime.CommonTokenStream;
+import org.antlr.v4.runtime.tree.ParseTree;
+
 import io.debezium.antlr.AntlrDdlParser;
 import io.debezium.antlr.AntlrDdlParserListener;
 import io.debezium.antlr.DataTypeResolver;
@@ -15,9 +19,6 @@ import io.debezium.ddl.parser.oracle.generated.PlSqlLexer;
 import io.debezium.ddl.parser.oracle.generated.PlSqlParser;
 import io.debezium.relational.SystemVariables;
 import io.debezium.relational.Tables;
-import org.antlr.v4.runtime.CharStream;
-import org.antlr.v4.runtime.CommonTokenStream;
-import org.antlr.v4.runtime.tree.ParseTree;
 
 /**
  * This is the main Oracle Antlr DML parser
@@ -36,8 +37,8 @@ public class OracleDmlParser extends AntlrDdlParser<PlSqlLexer, PlSqlParser> {
         this.converter = converter;
     }
 
-    public LogMinerRowLcr getDmlChange(){
-       return rowLCR;
+    public LogMinerRowLcr getDmlChange() {
+        return rowLCR;
     }
 
     public void setRowLCR(LogMinerRowLcr rowLCR) {
@@ -49,7 +50,7 @@ public class OracleDmlParser extends AntlrDdlParser<PlSqlLexer, PlSqlParser> {
         if (!dmlContent.endsWith(";")) {
             dmlContent = dmlContent + ";";
         }
-        //DML content is case sensitive
+        // DML content is case sensitive
         super.parse(dmlContent, databaseTables);
     }
 
@@ -88,7 +89,7 @@ public class OracleDmlParser extends AntlrDdlParser<PlSqlLexer, PlSqlParser> {
         return null;
     }
 
-    public OracleChangeRecordValueConverter getConverters(){
+    public OracleChangeRecordValueConverter getConverters() {
         return converter;
     }
 }

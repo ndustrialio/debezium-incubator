@@ -5,16 +5,17 @@
  */
 package io.debezium.connector.cassandra.transforms.type.deserializer;
 
-import io.debezium.connector.cassandra.transforms.CassandraTypeToAvroSchemaMapper;
-import org.apache.cassandra.db.marshal.AbstractType;
-
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
+
+import org.apache.cassandra.db.marshal.AbstractType;
+
+import io.debezium.connector.cassandra.transforms.CassandraTypeKafkaSchemaBuilders;
 
 public class InetAddressDeserializer extends BasicTypeDeserializer {
 
     public InetAddressDeserializer() {
-        super(CassandraTypeToAvroSchemaMapper.STRING_TYPE);
+        super(CassandraTypeKafkaSchemaBuilders.STRING_TYPE);
     }
 
     @Override

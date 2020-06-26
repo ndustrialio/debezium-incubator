@@ -5,6 +5,9 @@
  */
 package io.debezium.connector.oracle.logminer;
 
+import java.util.Arrays;
+import java.util.List;
+
 import io.debezium.connector.oracle.BaseChangeRecordEmitter;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerColumnValue;
 import io.debezium.connector.oracle.logminer.valueholder.LogMinerRowLcr;
@@ -13,9 +16,6 @@ import io.debezium.pipeline.spi.OffsetContext;
 import io.debezium.relational.Table;
 import io.debezium.util.Clock;
 
-import java.util.Arrays;
-import java.util.List;
-
 /**
  * Emits change record based on a single {@link LogMinerRowLcr} event.
  */
@@ -23,7 +23,6 @@ public class LogMinerChangeRecordEmitter extends BaseChangeRecordEmitter<LogMine
 
     private LogMinerRowLcr lcr;
     protected final Table table;
-
 
     public LogMinerChangeRecordEmitter(OffsetContext offset, LogMinerRowLcr lcr, Table table, Clock clock) {
         super(offset, table, clock);
@@ -38,15 +37,15 @@ public class LogMinerChangeRecordEmitter extends BaseChangeRecordEmitter<LogMine
 
     @Override
     protected Object[] getOldColumnValues() {
-        List<LogMinerColumnValue> valueList =  lcr.getOldValues();
-        LogMinerColumnValue[] result = Arrays.copyOf(valueList.toArray(), valueList.size(), LogMinerColumnValue[].class );
+        List<LogMinerColumnValue> valueList = lcr.getOldValues();
+        LogMinerColumnValue[] result = Arrays.copyOf(valueList.toArray(), valueList.size(), LogMinerColumnValue[].class);
         return getColumnValues(result);
     }
 
     @Override
     protected Object[] getNewColumnValues() {
-        List<LogMinerColumnValue> valueList =  lcr.getNewValues();
-        LogMinerColumnValue[] result = Arrays.copyOf(valueList.toArray(), valueList.size(), LogMinerColumnValue[].class );
+        List<LogMinerColumnValue> valueList = lcr.getNewValues();
+        LogMinerColumnValue[] result = Arrays.copyOf(valueList.toArray(), valueList.size(), LogMinerColumnValue[].class);
         return getColumnValues(result);
     }
 

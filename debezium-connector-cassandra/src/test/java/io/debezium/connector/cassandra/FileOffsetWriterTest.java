@@ -5,10 +5,9 @@
  */
 package io.debezium.connector.cassandra;
 
-import io.debezium.connector.cassandra.exceptions.CassandraConnectorTaskException;
-import org.apache.avro.SchemaBuilder;
-import org.junit.Before;
-import org.junit.Test;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -16,9 +15,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import org.apache.kafka.connect.data.Schema;
+import org.junit.Before;
+import org.junit.Test;
+
+import io.debezium.config.Configuration;
+import io.debezium.connector.cassandra.exceptions.CassandraConnectorTaskException;
+import io.debezium.time.Conversions;
 
 public class FileOffsetWriterTest {
 
@@ -79,7 +82,7 @@ public class FileOffsetWriterTest {
     @Test
     public void testFlush() throws IOException {
         offsetWriter.flush();
-        try (FileInputStream fis = new FileInputStream(offsetDir.toString() + "/" +  FileOffsetWriter.SNAPSHOT_OFFSET_FILE)) {
+        try (FileInputStream fis = new FileInputStream(offsetDir.toString() + "/" + FileOffsetWriter.SNAPSHOT_OFFSET_FILE)) {
             snapshotProps.load(fis);
         }
         try (FileInputStream fis = new FileInputStream(offsetDir.toString() + "/" + FileOffsetWriter.COMMITLOG_OFFSET_FILE)) {
@@ -103,7 +106,7 @@ public class FileOffsetWriterTest {
         process(commitLogRecordDiffTable);
 
         offsetWriter.flush();
-        try (FileInputStream fis = new FileInputStream(offsetDir.toString() + "/" +  FileOffsetWriter.SNAPSHOT_OFFSET_FILE)) {
+        try (FileInputStream fis = new FileInputStream(offsetDir.toString() + "/" + FileOffsetWriter.SNAPSHOT_OFFSET_FILE)) {
             snapshotProps.load(fis);
         }
         try (FileInputStream fis = new FileInputStream(offsetDir.toString() + "/" + FileOffsetWriter.COMMITLOG_OFFSET_FILE)) {
@@ -125,23 +128,23 @@ public class FileOffsetWriterTest {
     }
 
     private ChangeRecord generateRecord(boolean markOffset, boolean isSnapshot, OffsetPosition offsetPosition, KeyspaceTable keyspaceTable) {
-        SourceInfo source = new SourceInfo("test-cluster", offsetPosition, keyspaceTable, isSnapshot, System.currentTimeMillis() * 1000);
-        return new ChangeRecord(source, new RowData(), SchemaBuilder.builder().intType(), SchemaBuilder.builder().intType(), Record.Operation.INSERT, markOffset);
+        CassandraConnectorConfig config = new CassandraConnectorConfig(Configuration.from(new Properties()));
+        SourceInfo sourceInfo = new SourceInfo(config, "test-cluster", offsetPosition, keyspaceTable,
+                isSnapshot, Conversions.toInstantFromMicros(System.currentTimeMillis() * 1000));
+        return new ChangeRecord(sourceInfo, new RowData(), Schema.INT32_SCHEMA, Schema.INT32_SCHEMA, Record.Operation.INSERT, markOffset);
     }
 
     private boolean isProcessed(ChangeRecord record) {
         return offsetWriter.isOffsetProcessed(
                 record.getSource().keyspaceTable.name(),
                 record.getSource().offsetPosition.serialize(),
-                record.getSource().snapshot
-        );
+                record.getSource().snapshot);
     }
 
     private void process(ChangeRecord record) {
         offsetWriter.markOffset(
                 record.getSource().keyspaceTable.name(),
                 record.getSource().offsetPosition.serialize(),
-                record.getSource().snapshot
-        );
+                record.getSource().snapshot);
     }
 }

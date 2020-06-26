@@ -5,41 +5,57 @@
  */
 package io.debezium.connector.cassandra;
 
+import java.util.Collections;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 
-import java.io.IOException;
-import java.security.GeneralSecurityException;
+import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.common.CdcSourceTaskContext;
 
 /**
  * Contains contextual information and objects scoped to the lifecycle
  * of {@link CassandraConnectorTask} implementation.
  */
-public class CassandraConnectorContext {
+public class CassandraConnectorContext extends CdcSourceTaskContext {
     private final CassandraConnectorConfig config;
     private final CassandraClient cassandraClient;
-    private final BlockingEventQueue<Event> queue;
+    private final ChangeEventQueue<Event> queue;
     private final SchemaHolder schemaHolder;
     private final OffsetWriter offsetWriter;
 
-    public CassandraConnectorContext(CassandraConnectorConfig config) throws GeneralSecurityException, IOException {
+    public CassandraConnectorContext(CassandraConnectorConfig config) throws Exception {
+
+        super(config.getContextName(), config.getLogicalName(), Collections::emptySet);
         this.config = config;
 
-        // Loading up DDL schemas from disk
-        loadDdlFromDisk(this.config.cassandraConfig());
+        try {
+            // Loading up DDL schemas from disk
+            loadDdlFromDisk(this.config.cassandraConfig());
 
-        // Setting up Cassandra driver
-        this.cassandraClient = new CassandraClient(this.config);
+            // Setting up Cassandra driver
+            this.cassandraClient = new CassandraClient(this.config);
 
-        // Setting up record queue ...
-        this.queue = new BlockingEventQueue<>(this.config.pollIntervalMs(), this.config.maxQueueSize(), this.config.maxBatchSize());
+            // Setting up record queue ...
+            this.queue = new ChangeEventQueue.Builder<Event>()
+                    .pollInterval(this.config.pollIntervalMs())
+                    .maxBatchSize(this.config.maxBatchSize())
+                    .maxQueueSize(this.config.maxQueueSize())
+                    .loggingContextSupplier(() -> this.configureLoggingContext(this.config.getContextName()))
+                    .build();
 
-        // Setting up schema holder ...
-        this.schemaHolder = new SchemaHolder(this.cassandraClient, this.config.connectorName());
+            // Setting up schema holder ...
+            this.schemaHolder = new SchemaHolder(this.cassandraClient, this.config.kafkaTopicPrefix(), this.config.getSourceInfoStructMaker());
 
-        // Setting up a file-based offset manager ...
-        this.offsetWriter = new FileOffsetWriter(this.config.offsetBackingStoreDir());
+            // Setting up a file-based offset manager ...
+            this.offsetWriter = new FileOffsetWriter(this.config.offsetBackingStoreDir());
+        }
+        catch (Exception e) {
+            // Clean up CassandraClient and FileOffsetWrite if connector context is failed to be initialized completely.
+            cleanUp();
+            throw e;
+        }
+
     }
 
     /**
@@ -56,8 +72,12 @@ public class CassandraConnectorContext {
     }
 
     public void cleanUp() {
-        this.cassandraClient.close();
-        this.offsetWriter.close();
+        if (this.cassandraClient != null) {
+            this.cassandraClient.close();
+        }
+        if (this.offsetWriter != null) {
+            this.offsetWriter.close();
+        }
     }
 
     public CassandraConnectorConfig getCassandraConnectorConfig() {
@@ -68,7 +88,7 @@ public class CassandraConnectorContext {
         return cassandraClient;
     }
 
-    public BlockingEventQueue<Event> getQueue() {
+    public ChangeEventQueue<Event> getQueue() {
         return queue;
     }
 
